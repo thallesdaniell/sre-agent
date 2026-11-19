@@ -1,0 +1,60 @@
+# O intake é o único componente sempre ligado. Os Jobs de investigação ele mesmo cria, um por incidente.
+# Secret esperado (crie fora do git, ex.: External Secrets):
+#   kubectl -n sre-agent create secret generic sre-agent-secrets \
+#     --from-literal=ANTHROPIC_API_KEY=... --from-literal=WEBHOOK_SECRET=... \
+#     --from-literal=GITHUB_TOKEN=... --from-literal=SLACK_BOT_TOKEN=...
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-agent-config
+  namespace: sre-agent
+data:
+  agent.config.json: |
+    {"products":[{"product":"checkout","namespaces":["checkout","checkout-workers"],"repository":"sua-org/checkout-api","environment":"production"}],
+     "integrations":{"kubernetes":{"type":"native"},"github":{"type":"native"}}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-agent-intake
+  namespace: sre-agent
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: sre-agent-intake }
+  template:
+    metadata:
+      labels: { app: sre-agent-intake }
+    spec:
+      serviceAccountName: sre-agent-intake
+      containers:
+        - name: intake
+          image: ghcr.io/sua-org/sre-agent:latest # fixe por digest no deploy real
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: DISPATCH_MODE, value: kubernetes }
+            - { name: JOB_NAMESPACE, value: sre-agent }
+            - { name: JOB_IMAGE, value: "ghcr.io/sua-org/sre-agent:latest" }
+            - { name: AGENT_CONFIG_FILE, value: /config/agent.config.json }
+            - name: WEBHOOK_SECRET
+              valueFrom: { secretKeyRef: { name: sre-agent-secrets, key: WEBHOOK_SECRET } }
+          volumeMounts: [{ name: config, mountPath: /config, readOnly: true }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 } }
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 256Mi } }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: config
+          configMap: { name: sre-agent-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-agent-intake
+  namespace: sre-agent
+spec:
+  selector: { app: sre-agent-intake }
+  ports: [{ port: 80, targetPort: 8080 }]

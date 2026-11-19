@@ -1,0 +1,26 @@
+{
+  "products": [
+    {
+      "product": "checkout",
+      "namespaces": ["checkout", "checkout-workers"],
+      "repository": "sua-org/checkout-api",
+      "environment": "production"
+    }
+  ],
+  "integrations": {
+    "kubernetes": { "type": "native" },
+    "github": { "type": "native" },
+    "datadog": {
+      "type": "mcp",
+      "enabled": false,
+      "purpose": "métricas, monitores disparados e logs do serviço",
+      "categories": ["symptoms"],
+      "transport": {
+        "kind": "http",
+        "url": "https://mcp.exemplo-do-fornecedor.com/mcp",
+        "headersFromEnv": { "DD-API-KEY": "DATADOG_API_KEY", "DD-APPLICATION-KEY": "DATADOG_APP_KEY" }
+      },
+      "allowTools": ["nome_da_tool_de_leitura_1", "nome_da_tool_de_leitura_2"]
+    }
+  }
+}

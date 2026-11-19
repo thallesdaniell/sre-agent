@@ -1,0 +1,9 @@
+{
+  "id": "INC-1042",
+  "title": "Checkout retornando 502 para parte dos usuários",
+  "product": "checkout",
+  "severity": "sev2",
+  "declaredAt": "2026-11-19T14:05:00Z",
+  "summary": "Desde ~13:50 a taxa de 502 no checkout subiu para 8%. Houve deploy hoje de manhã.",
+  "slackChannel": "#inc-1042-checkout-502"
+}

@@ -1,0 +1,67 @@
+# Identidade do JOB do agente: só leitura, e só nos namespaces do inventário.
+# Repita o Role + RoleBinding para cada namespace listado em agent.config.json.
+# Sem secrets, sem pods/exec, sem nenhum verbo de escrita. É isto, e não o prompt, que garante
+# que o agente não altera nada.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-agent-readonly
+  namespace: sre-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-agent-evidence
+  namespace: checkout
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-agent-evidence
+  namespace: checkout
+subjects:
+  - kind: ServiceAccount
+    name: sre-agent-readonly
+    namespace: sre-agent
+roleRef:
+  kind: Role
+  name: sre-agent-evidence
+  apiGroup: rbac.authorization.k8s.io
+---
+# Identidade do INTAKE: só pode criar Jobs no namespace do agente. Não lê nada dos produtos.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-agent-intake
+  namespace: sre-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-agent-dispatch
+  namespace: sre-agent
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-agent-dispatch
+  namespace: sre-agent
+subjects:
+  - kind: ServiceAccount
+    name: sre-agent-intake
+    namespace: sre-agent
+roleRef:
+  kind: Role
+  name: sre-agent-dispatch
+  apiGroup: rbac.authorization.k8s.io
