@@ -1,6 +1,6 @@
 # Postgres para desenvolvimento local e para os testes de integração.
 #   docker compose up -d
-#   DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent npm run db:migrate
+#   DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent go run ./cmd/sre-agent migrate
 #
 # Visualizador de traces local, sem conta em lugar nenhum (opcional):
 #   docker compose --profile tracing up -d

@@ -33,7 +33,7 @@ spec:
       initContainers:
         - name: migrate
           image: ghcr.io/sua-org/sre-agent:latest
-          command: ["node", "dist/db/migrate.js"]
+          args: ["migrate"]
           env:
             - name: DATABASE_URL
               valueFrom: { secretKeyRef: { name: sre-agent-secrets, key: DATABASE_URL } }

@@ -3,7 +3,7 @@
 Agente de plantão que investiga incidentes em produção e publica uma **hipótese de causa raiz** no Slack.
 Ele só lê: não tem shell, não escreve em arquivo, não altera o cluster. Quem confirma a causa é uma pessoa.
 
-Projeto de estudo de agentes de IA para SRE, construído com o [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) (Tool Runner) e Claude.
+Projeto de estudo de agentes de IA para SRE, em **Go**, construído com o [Anthropic Go SDK](https://github.com/anthropics/anthropic-sdk-go) (Tool Runner) e Claude. Um binário, vários subcomandos, imagem distroless de ~90 MB.
 
 ## Como funciona
 
@@ -77,16 +77,16 @@ sequenceDiagram
     Note over K,J: o Job termina e é apagado depois de 1 h
 ```
 
-- **Intake** (`src/intake/`): o único processo sempre ligado. Autentica o webhook, valida o payload e cria um Kubernetes Job. O nome do Job vem do id do incidente, então o mesmo incidente nunca gera dois runs.
-- **Job** (`src/job.ts`): um processo por incidente. Conecta as integrações, roda o agente, publica e termina.
-- **Agente** (`src/agent/`): o Tool Runner do SDK cuida do loop. O agente termina chamando `submit_rca_report`, e o schema em `src/report/schema.ts` impõe as regras do relatório (nunca `CONFIRMED`, confiança limitada quando a mudança só "veio antes", evidência obrigatória).
-- **Integrações** (`src/integrations/`): cada fonte de evidência é um módulo. Ver abaixo.
-- **Rastreio** (`src/telemetry.ts`): OpenTelemetry padrão. Cada investigação vira um trace com cada chamada ao modelo e cada tool. Ver [Rastreio](#rastreio).
-- **Store** (`src/store/`): todo acesso ao Postgres passa por uma interface (`Store`), com todo o SQL em `pg-store.ts`. Ver [Persistência](#persistência).
+- **Intake** (`internal/intake/`): o único processo sempre ligado. Autentica o webhook, valida o payload e cria um Kubernetes Job. O nome do Job vem do id do incidente, então o mesmo incidente nunca gera dois runs.
+- **Job** (`internal/job/`): um processo por incidente. Conecta as integrações, roda o agente, publica e termina.
+- **Agente** (`internal/agent/`): o Tool Runner do SDK cuida do loop. O agente termina chamando `submit_rca_report`, e `internal/report/report.go` impõe as regras do relatório (nunca `CONFIRMED`, confiança limitada quando a mudança só "veio antes", evidência obrigatória).
+- **Integrações** (`internal/integrations/`): cada fonte de evidência é um módulo. Ver abaixo.
+- **Rastreio** (`internal/telemetry/`): OpenTelemetry padrão. Cada investigação vira um trace com cada chamada ao modelo e cada tool. Ver [Rastreio](#rastreio).
+- **Store** (`internal/store/`): todo acesso ao Postgres passa por uma interface (`Store`), com todo o SQL em `pg.go` e uma versão em memória (`memstore`) para os testes. Ver [Persistência](#persistência).
 
 ## Integrações
 
-Toda integração implementa o mesmo contrato (`src/integrations/types.ts`) e declara de que **tipo de evidência** ela é fonte:
+Toda integração implementa o mesmo contrato (`internal/integrations/integrations.go`) e declara de que **tipo de evidência** ela é fonte:
 
 | Categoria | Pergunta que responde |
 |---|---|
@@ -150,10 +150,10 @@ Segredos nunca ficam no arquivo: `headersFromEnv` diz o **nome** da variável de
 
 **Integração nativa**:
 
-1. Crie `src/integrations/<nome>/client.ts` (a chamada à API externa) e `src/integrations/<nome>/index.ts` (as tools, com `betaZodTool`).
-2. Registre em `NATIVE_INTEGRATIONS` (`src/integrations/registry.ts`).
+1. Crie `internal/integrations/<nome>/<nome>.go` com uma função que devolve `integrations.Integration`. Cada tool é uma struct com tags `jsonschema` (o schema que o modelo vê) e uma função criada com `integrations.NewTool`. Valide os argumentos dentro da função: erro devolvido volta para o modelo corrigir.
+2. Registre em `job.Natives` (`internal/job/job.go`).
 3. Habilite no `agent.config.json`: `"<nome>": { "type": "native" }`.
-4. Escreva o teste em `tests/`.
+4. Escreva o teste ao lado (`<nome>_test.go`). Para Kubernetes use `k8s.io/client-go/kubernetes/fake`; para APIs HTTP, `httptest`.
 
 ## Persistência
 
@@ -225,7 +225,7 @@ Regras que ficam no banco, e não só no código:
 
 ### Migrations
 
-Arquivos `.sql` em `migrations/`, aplicados em ordem por `npm run db:migrate` (`src/db/migrate.ts`). Cada arquivo roda numa transação e fica registrado em `schema_migrations`; um advisory lock evita duas réplicas migrando ao mesmo tempo. **Migration aplicada não se edita**: mudança nova é arquivo novo (`002_...sql`). No Kubernetes, a migration roda como `initContainer` do intake.
+Arquivos `.sql` em `migrations/`, embutidos no binário (`go:embed`) e aplicados em ordem por `sre-agent migrate` (`internal/db/`). Cada arquivo roda numa transação e fica registrado em `schema_migrations`; um advisory lock evita duas réplicas migrando ao mesmo tempo. **Migration aplicada não se edita**: mudança nova é arquivo novo (`002_...sql`). No Kubernetes, a migration roda como `initContainer` do intake.
 
 ### Post-mortems
 
@@ -245,7 +245,7 @@ tags: oom, deploy, memoria
 ```
 
 ```bash
-npm run postmortems:import -- fixtures/postmortems
+go run ./cmd/sre-agent import-postmortems fixtures/postmortems
 ```
 
 A busca usa o full-text search do Postgres em português, com peso maior para título, causa raiz e tags. Busca semântica (`pgvector`) fica para quando a textual não bastar.
@@ -270,7 +270,7 @@ flowchart TD
     loop --> m1 --> t1 --> t2 --> m2 --> t3 --> m3
 ```
 
-Só o span raiz (`rca.investigation`) é nosso. Os outros vêm prontos do SDK da Anthropic, que segue as convenções `gen_ai.*` do OpenTelemetry. O `trace_id` fica gravado em `investigation_run`, então dá para ir do banco (ou do `npm run review`) direto para o raciocínio daquela investigação.
+Só o span raiz (`rca.investigation`) é nosso. Os outros vêm prontos do SDK da Anthropic, que segue as convenções `gen_ai.*` do OpenTelemetry. O `trace_id` fica gravado em `investigation_run`, então dá para ir do banco (ou do `sre-agent review`) direto para o raciocínio daquela investigação.
 
 ### Por que OpenTelemetry e não o SDK de um fornecedor
 
@@ -316,7 +316,7 @@ Para este projeto, a escolha é **Langfuse**: open source, roda de graça na sua
 O agente começa em **modo sombra** (`PUBLISH_MODE=shadow`, o padrão): investiga, salva o relatório e o trace, mas **não publica nada**. O time compara as conclusões com o que de fato aconteceu, sem o agente influenciar o incidente. Quando a taxa de acerto justificar, troque para `PUBLISH_MODE=slack`.
 
 ```bash
-npm run review
+go run ./cmd/sre-agent review
 ```
 
 ```text
@@ -329,52 +329,73 @@ npm run review
 Registre se o agente acertou. Quando ele errou, a causa real é obrigatória: é ela que a tool `past_incidents` mostra ao agente na próxima investigação do produto.
 
 ```bash
-npm run review -- feedback <reportId> correct --author ana
-npm run review -- feedback <reportId> wrong --author ana --cause "Pool de conexões esgotado"
+go run ./cmd/sre-agent review feedback <reportId> correct --author ana
+go run ./cmd/sre-agent review feedback <reportId> wrong --author ana --cause "Pool de conexões esgotado"
+```
+
+## Estrutura do código
+
+```text
+cmd/sre-agent/          um binário, subcomandos: intake, job, migrate, review, import-postmortems
+internal/
+  agent/                loop do agente (Tool Runner), prompt e tool submit_rca_report
+  job/                  um incidente do começo ao fim: run, relatório, publicação, span raiz
+  intake/               webhook com HMAC, dedupe e disparo do Kubernetes Job
+  integrations/         contrato, registro e teto de saída
+    kubernetes/         pods, logs, eventos, histórico de rollout (client-go)
+    github/             PRs mergeados e deployments (REST)
+    history/            post-mortems e incidentes anteriores com feedback
+    mcpint/             qualquer servidor MCP, com allowlist
+  report/               schema, regras de validação e mensagem do Slack
+  store/                interface, Postgres (pgx) e memstore para testes
+  telemetry/            OpenTelemetry com destino por ambiente
+  config/ incident/ scope/ review/ postmortem/ slackpub/ db/
+migrations/             SQL, embutido no binário
+deploy/                 Dockerfile e manifests do Kubernetes
 ```
 
 ## Rodando localmente
 
-Pré-requisitos: Node 22 (ou Docker), Docker Compose, acesso a um cluster (pode ser `kind` ou `k3d`) e credencial da Anthropic (`ANTHROPIC_API_KEY` ou `ant auth login`).
+Pré-requisitos: Go 1.26 (ou só Docker), Docker Compose, acesso a um cluster (pode ser `kind` ou `k3d`) e credencial da Anthropic (`ANTHROPIC_API_KEY` ou `ant auth login`).
 
 ```bash
-npm install
 cp .env.example .env
 cp agent.config.example.json agent.config.json
 docker compose up -d
-npm run db:migrate
-npm run postmortems:import -- fixtures/postmortems
-npm test
+export DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent
+go run ./cmd/sre-agent migrate
+go run ./cmd/sre-agent import-postmortems fixtures/postmortems
+go test ./...
 ```
 
-Os testes do Postgres (`tests/pg-store.test.ts`) só rodam com `TEST_DATABASE_URL`, porque apagam e recriam o schema. Use um banco separado:
+Os testes do Postgres (`internal/store/pg_test.go`) só rodam com `TEST_DATABASE_URL`, porque apagam e recriam o schema. Use um banco separado:
 
 ```bash
 docker compose exec postgres createdb -U sre sre_agent_test
-TEST_DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent_test npm test
+TEST_DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent_test go test ./...
 ```
 
-Investigar um incidente de exemplo (usa o `~/.kube/config` e imprime a mensagem no stdout se não houver `SLACK_BOT_TOKEN`):
+Investigar um incidente de exemplo (usa o `~/.kube/config`; em modo sombra só salva, com `PUBLISH_MODE=slack` e sem `SLACK_BOT_TOKEN` imprime a mensagem):
 
 ```bash
-npm run job -- fixtures/incident.sample.json
+go run ./cmd/sre-agent job fixtures/incident.sample.json
 ```
 
 Subir o intake em modo local (roda a investigação no mesmo processo):
 
 ```bash
-npm run intake
+go run ./cmd/sre-agent intake
 ```
 
-Sem Node instalado, rode tudo pelo Docker:
+Sem Go instalado, rode os testes pelo Docker:
 
 ```bash
-docker run --rm -v "$PWD":/app -w /app node:22-slim sh -c "npm ci && npm test"
+docker run --rm -v "$PWD":/src -w /src golang:1.26 go test ./...
 ```
 
 ## Deploy
 
-- `deploy/Dockerfile`: a mesma imagem serve o intake e o job.
+- `deploy/Dockerfile`: build multi-stage, imagem final distroless (sem shell) com usuário não-root. A mesma imagem serve o intake (padrão) e o job (`sre-agent job`).
 - `deploy/k8s/rbac-readonly.yaml`: a ServiceAccount do job só tem `get`/`list` em pods, logs, eventos, deployments e replicasets. Sem secrets, sem `exec`. O intake só pode criar Jobs no próprio namespace.
 - `deploy/k8s/intake.yaml`: Deployment do intake (com a migration como `initContainer`), ConfigMap com o `agent.config.json` e Service.
 - Postgres gerenciado (Cloud SQL, RDS...) com `DATABASE_URL` no Secret `sre-agent-secrets`. O usuário do banco só precisa de acesso ao próprio schema.
