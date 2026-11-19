@@ -4,6 +4,7 @@ import type { Incident } from "../src/incident.js";
 import { jobName, type Dispatcher } from "../src/intake/dispatch.js";
 import { sign, verifySignature } from "../src/intake/hmac.js";
 import { buildApp } from "../src/intake/server.js";
+import { MemoryStore } from "./support/memory-store.js";
 
 const SECRET = "segredo-de-teste-com-mais-de-24-caracteres";
 const scopes = new ScopeRegistry([
@@ -57,23 +58,51 @@ describe("verifySignature", () => {
 describe("POST /webhooks/incident", () => {
   it("dispara a investigação para incidente válido", async () => {
     const dispatcher = new RecordingDispatcher();
-    const res = await buildApp({ secret: SECRET, scopes, dispatcher }).request(signedRequest(incident));
+    const res = await buildApp({ secret: SECRET, scopes, store: new MemoryStore(), dispatcher }).request(signedRequest(incident));
     expect(res.status).toBe(202);
     expect(dispatcher.calls).toHaveLength(1);
   });
 
   it("recusa assinatura com segredo errado e não dispara nada", async () => {
     const dispatcher = new RecordingDispatcher();
-    const res = await buildApp({ secret: SECRET, scopes, dispatcher }).request(signedRequest(incident, "outro-segredo-qualquer-bem-longo"));
+    const res = await buildApp({ secret: SECRET, scopes, store: new MemoryStore(), dispatcher }).request(signedRequest(incident, "outro-segredo-qualquer-bem-longo"));
     expect(res.status).toBe(401);
     expect(dispatcher.calls).toHaveLength(0);
   });
 
   it("ignora produto fora do inventário", async () => {
     const dispatcher = new RecordingDispatcher();
-    const res = await buildApp({ secret: SECRET, scopes, dispatcher }).request(signedRequest({ ...incident, product: "billing" }));
+    const res = await buildApp({ secret: SECRET, scopes, store: new MemoryStore(), dispatcher }).request(signedRequest({ ...incident, product: "billing" }));
     expect(await res.json()).toMatchObject({ status: "ignored" });
     expect(dispatcher.calls).toHaveLength(0);
+  });
+});
+
+describe("deduplicação pelo banco", () => {
+  it("a mesma entrega repetida dispara uma vez só", async () => {
+    const dispatcher = new RecordingDispatcher();
+    const app = buildApp({ secret: SECRET, scopes, store: new MemoryStore(), dispatcher });
+
+    expect((await app.request(signedRequest(incident))).status).toBe(202);
+    const second = await app.request(signedRequest(incident));
+    expect(await second.json()).toMatchObject({ status: "duplicate", ref: "rca-inc-1042" });
+    expect(dispatcher.calls).toHaveLength(1);
+  });
+
+  it("se o disparo falhar, o retry do remetente dispara de novo", async () => {
+    let attempts = 0;
+    const flaky: Dispatcher = {
+      async dispatch(i) {
+        attempts += 1;
+        if (attempts === 1) throw new Error("API do Kubernetes indisponível");
+        return { kind: "dispatched", ref: jobName(i.id) };
+      },
+    };
+    const app = buildApp({ secret: SECRET, scopes, store: new MemoryStore(), dispatcher: flaky });
+
+    expect((await app.request(signedRequest(incident))).status).toBe(500);
+    expect((await app.request(signedRequest(incident))).status).toBe(202);
+    expect(attempts).toBe(2);
   });
 });
 

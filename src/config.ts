@@ -3,6 +3,7 @@ import { z } from "zod";
 /** Toda configuração entra por variável de ambiente e é validada no boot: falha cedo, não no meio do incidente. */
 const Env = z.object({
   WEBHOOK_SECRET: z.string().min(24, "WEBHOOK_SECRET precisa de ao menos 24 caracteres"),
+  DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, "DATABASE_URL precisa ser postgres://..."),
   GITHUB_TOKEN: z.string().optional(),
   SLACK_BOT_TOKEN: z.string().optional(),
   AGENT_CONFIG_FILE: z.string().default("./agent.config.json"),

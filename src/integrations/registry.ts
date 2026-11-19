@@ -1,6 +1,7 @@
 import type { AgentConfig } from "../agent-config.js";
 import { truncateOutput } from "./bounds.js";
 import { githubIntegration } from "./github/index.js";
+import { historyIntegration } from "./history/index.js";
 import { kubernetesIntegration } from "./kubernetes/index.js";
 import { mcpIntegration, type McpClientFactory } from "./mcp/index.js";
 import { EVIDENCE_CATEGORIES, type EvidenceCategory, type Integration, type IntegrationContext, type RunnableTool } from "./types.js";
@@ -13,6 +14,7 @@ import { EVIDENCE_CATEGORIES, type EvidenceCategory, type Integration, type Inte
 export const NATIVE_INTEGRATIONS: Record<string, () => Integration> = {
   kubernetes: () => kubernetesIntegration(),
   github: () => githubIntegration(),
+  history: () => historyIntegration(),
 };
 
 export function resolveIntegrations(config: AgentConfig, mcpFactory?: McpClientFactory): Integration[] {

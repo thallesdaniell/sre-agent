@@ -10,6 +10,7 @@
   "integrations": {
     "kubernetes": { "type": "native" },
     "github": { "type": "native" },
+    "history": { "type": "native" },
     "datadog": {
       "type": "mcp",
       "enabled": false,

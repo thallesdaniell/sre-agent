@@ -13,6 +13,8 @@ export class InvestigationError extends Error {
   constructor(
     readonly code: "no_report" | "refused" | "max_iterations",
     message: string,
+    /** Tokens gastos até a falha: investigação que falha também custa. */
+    readonly usage: { inputTokens: number; outputTokens: number } = { inputTokens: 0, outputTokens: 0 },
   ) {
     super(message);
   }
@@ -60,10 +62,10 @@ export async function investigate(
 
   if (inbox.report) return { report: inbox.report, usage };
   if (last?.stop_reason === "refusal") {
-    throw new InvestigationError("refused", `Modelo recusou: ${last.stop_details?.category ?? "sem categoria"}`);
+    throw new InvestigationError("refused", `Modelo recusou: ${last.stop_details?.category ?? "sem categoria"}`, usage);
   }
   if (last?.stop_reason === "tool_use") {
-    throw new InvestigationError("max_iterations", `Atingiu ${MAX_ITERATIONS} voltas sem entregar relatório`);
+    throw new InvestigationError("max_iterations", `Atingiu ${MAX_ITERATIONS} voltas sem entregar relatório`, usage);
   }
-  throw new InvestigationError("no_report", "O agente terminou sem chamar submit_rca_report");
+  throw new InvestigationError("no_report", "O agente terminou sem chamar submit_rca_report", usage);
 }

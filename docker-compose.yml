@@ -1,0 +1,18 @@
+# Postgres para desenvolvimento local e para os testes de integração.
+#   docker compose up -d
+#   DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent npm run db:migrate
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: sre
+      POSTGRES_PASSWORD: sre
+      POSTGRES_DB: sre_agent
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "sre", "-d", "sre_agent"]
+      interval: 2s
+      retries: 15
+volumes:
+  pgdata:

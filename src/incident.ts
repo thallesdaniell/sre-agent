@@ -5,6 +5,7 @@ import { z } from "zod";
  * Cada fonte ganha um adaptador que converte o payload dela para isto.
  */
 export const Incident = z.object({
+  source: z.string().regex(/^[a-z0-9._-]{1,40}$/).default("webhook").describe("Quem avisou: incident.io, pagerduty..."),
   id: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
   title: z.string().min(1).max(300),
   product: z.string().regex(/^[a-z0-9-]+$/),

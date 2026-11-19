@@ -2,6 +2,7 @@
 # Secret esperado (crie fora do git, ex.: External Secrets):
 #   kubectl -n sre-agent create secret generic sre-agent-secrets \
 #     --from-literal=ANTHROPIC_API_KEY=... --from-literal=WEBHOOK_SECRET=... \
+#     --from-literal=DATABASE_URL=postgres://... \
 #     --from-literal=GITHUB_TOKEN=... --from-literal=SLACK_BOT_TOKEN=...
 apiVersion: v1
 kind: ConfigMap
@@ -11,7 +12,7 @@ metadata:
 data:
   agent.config.json: |
     {"products":[{"product":"checkout","namespaces":["checkout","checkout-workers"],"repository":"sua-org/checkout-api","environment":"production"}],
-     "integrations":{"kubernetes":{"type":"native"},"github":{"type":"native"}}}
+     "integrations":{"kubernetes":{"type":"native"},"github":{"type":"native"},"history":{"type":"native"}}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,6 +28,19 @@ spec:
       labels: { app: sre-agent-intake }
     spec:
       serviceAccountName: sre-agent-intake
+      # Aplica as migrations antes do intake subir. O advisory lock evita corrida entre réplicas.
+      initContainers:
+        - name: migrate
+          image: ghcr.io/sua-org/sre-agent:latest
+          command: ["node", "dist/db/migrate.js"]
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-secrets, key: DATABASE_URL } }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
       containers:
         - name: intake
           image: ghcr.io/sua-org/sre-agent:latest # fixe por digest no deploy real
@@ -38,6 +52,8 @@ spec:
             - { name: AGENT_CONFIG_FILE, value: /config/agent.config.json }
             - name: WEBHOOK_SECRET
               valueFrom: { secretKeyRef: { name: sre-agent-secrets, key: WEBHOOK_SECRET } }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-secrets, key: DATABASE_URL } }
           volumeMounts: [{ name: config, mountPath: /config, readOnly: true }]
           readinessProbe: { httpGet: { path: /healthz, port: 8080 } }
           resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 256Mi } }

@@ -4,8 +4,11 @@ import { Hono } from "hono";
 import { loadEnv, type Env } from "../config.js";
 import { loadAgentConfig } from "../agent-config.js";
 import type { ScopeRegistry } from "../scope.js";
+import { createPool } from "../db/pool.js";
 import { Incident } from "../incident.js";
 import { runJob } from "../job.js";
+import { PgStore } from "../store/pg-store.js";
+import type { Store } from "../store/types.js";
 import { KubernetesJobDispatcher, jobName, type Dispatcher } from "./dispatch.js";
 import { verifySignature } from "./hmac.js";
 
@@ -13,13 +16,11 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 /** Dev: roda a investigação no próprio processo, sem esperar (responde 202 na hora). */
 export class LocalDispatcher implements Dispatcher {
-  private readonly seen = new Set<string>();
+  constructor(private readonly store: Store) {}
 
   async dispatch(incident: Incident) {
     const ref = jobName(incident.id);
-    if (this.seen.has(ref)) return { kind: "duplicate" as const, ref };
-    this.seen.add(ref);
-    void runJob(incident).catch((error: unknown) => console.error("investigação falhou", ref, error));
+    void runJob(incident, this.store).catch((error: unknown) => console.error("investigação falhou", ref, error));
     return { kind: "dispatched" as const, ref };
   }
 }
@@ -28,7 +29,7 @@ export class LocalDispatcher implements Dispatcher {
  * O único componente sempre ligado. Faz o mínimo: autentica, valida, filtra e dispara.
  * Nada de LLM aqui; a investigação roda no job.
  */
-export function buildApp(deps: { secret: string; scopes: ScopeRegistry; dispatcher: Dispatcher }) {
+export function buildApp(deps: { secret: string; scopes: ScopeRegistry; store: Store; dispatcher: Dispatcher }) {
   const app = new Hono();
 
   app.get("/healthz", (c) => c.text("ok"));
@@ -62,15 +63,21 @@ export function buildApp(deps: { secret: string; scopes: ScopeRegistry; dispatch
       return c.json({ status: "ignored", reason: "product_not_in_scope" }, 200);
     }
 
+    // O banco é quem deduplica: funciona com várias réplicas do intake e sobrevive a restart.
+    const claim = await deps.store.claimCase(incident);
+    if (claim.kind === "already_dispatched") return c.json({ status: "duplicate", ref: claim.ref }, 200);
+
+    // Se o disparo falhar, o caso fica sem dispatched_at e o retry do remetente tenta de novo.
     const result = await deps.dispatcher.dispatch(incident);
+    await deps.store.markDispatched(claim.caseId, result.ref);
     return c.json({ status: result.kind, ref: result.ref }, result.kind === "dispatched" ? 202 : 200);
   });
 
   return app;
 }
 
-function dispatcherFor(env: Env): Dispatcher {
-  if (env.DISPATCH_MODE === "local") return new LocalDispatcher();
+function dispatcherFor(env: Env, store: Store): Dispatcher {
+  if (env.DISPATCH_MODE === "local") return new LocalDispatcher(store);
   return new KubernetesJobDispatcher({
     namespace: env.JOB_NAMESPACE,
     image: env.JOB_IMAGE,
@@ -81,10 +88,12 @@ function dispatcherFor(env: Env): Dispatcher {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const env = loadEnv();
+  const store = new PgStore(createPool(env.DATABASE_URL));
   const app = buildApp({
     secret: env.WEBHOOK_SECRET,
     scopes: loadAgentConfig(env.AGENT_CONFIG_FILE).scopes,
-    dispatcher: dispatcherFor(env),
+    store,
+    dispatcher: dispatcherFor(env, store),
   });
   serve({ fetch: app.fetch, port: env.PORT }, (info) => console.log(`intake ouvindo em :${info.port} (${env.DISPATCH_MODE})`));
 }

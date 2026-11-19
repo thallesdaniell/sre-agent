@@ -1,5 +1,6 @@
 import type { BetaRunnableTool } from "@anthropic-ai/sdk/lib/tools/BetaRunnableTool";
 import type { ScopeRegistry } from "../scope.js";
+import type { Store } from "../store/types.js";
 
 /**
  * Categoria da evidência que uma integração fornece. O prompt agrupa as fontes por categoria
@@ -18,6 +19,10 @@ export type RunnableTool = BetaRunnableTool<any>;
 
 export interface IntegrationContext {
   scopes: ScopeRegistry;
+  /** Acesso ao histórico (incidentes anteriores, post-mortems) para integrações de contexto. */
+  store: Store;
+  /** Id do incidente investigado, para as consultas de histórico não devolverem ele mesmo. */
+  currentIncidentId?: string | undefined;
   env: NodeJS.ProcessEnv;
 }
 

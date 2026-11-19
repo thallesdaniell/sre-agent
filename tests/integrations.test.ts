@@ -4,9 +4,11 @@ import { mcpIntegration, McpServerConfig, type McpClientFactory } from "../src/i
 import { connectIntegrations, resolveIntegrations } from "../src/integrations/registry.js";
 import type { Integration, RunnableTool } from "../src/integrations/types.js";
 import { ScopeRegistry } from "../src/scope.js";
+import { MemoryStore } from "./support/memory-store.js";
 
 const ctx = {
   scopes: new ScopeRegistry([{ product: "checkout", namespaces: ["checkout"], repository: "org/checkout-api", environment: "production" }]),
+  store: new MemoryStore(),
   env: {},
 };
 
