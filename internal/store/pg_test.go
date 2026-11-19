@@ -161,3 +161,40 @@ func TestBuscaPostmortemsEmPortugues(t *testing.T) {
 		t.Fatal(pm)
 	}
 }
+
+func TestGravaCustoTokensDeCacheEModelAPIError(t *testing.T) {
+	st, pool := setup(t)
+	ctx := t.Context()
+	claim, _ := st.ClaimCase(ctx, testfixtures.Incident())
+	run, _ := st.StartRun(ctx, claim.CaseID, "claude-opus-5-5", "")
+	id, _ := st.SaveReport(ctx, run.RunID, claim.CaseID, testfixtures.Report(), "")
+	usage := store.Usage{InputTokens: 32273, OutputTokens: 5662, CacheReadTokens: 16564, CacheWrite5mTokens: 4141, CostUSD: 0.26635, Priced: true}
+	if err := st.FinishRun(ctx, run.RunID, store.RunOutcome{Usage: usage}); err != nil {
+		t.Fatal(err)
+	}
+	var cacheRead, cacheWrite int
+	var cost float64
+	_ = pool.QueryRow(ctx, `SELECT cache_read_tokens, cache_write_5m_tokens, cost_usd_estimate::float8 FROM investigation_run WHERE id = $1::uuid`, string(run.RunID)).Scan(&cacheRead, &cacheWrite, &cost)
+	if cacheRead != 16564 || cacheWrite != 4141 || cost != 0.26635 {
+		t.Fatalf("gravou %d %d %v", cacheRead, cacheWrite, cost)
+	}
+	reports, _ := st.ListRecentReports(ctx, 1)
+	if reports[0].ReportID != id || reports[0].CostUSD == nil || *reports[0].CostUSD != 0.26635 {
+		t.Fatalf("%+v", reports[0])
+	}
+
+	// O novo código de falha é aceito pela constraint; custo fica NULL sem preço conhecido.
+	other := testfixtures.Incident()
+	other.ID = "INC-3000"
+	c2, _ := st.ClaimCase(ctx, other)
+	r2, _ := st.StartRun(ctx, c2.CaseID, "claude-opus-5-5", "")
+	if err := st.FinishRun(ctx, r2.RunID, store.RunOutcome{Failure: store.FailureModelAPIError, Detail: "400 sem crédito"}); err != nil {
+		t.Fatal(err)
+	}
+	var code string
+	var nullCost *float64
+	_ = pool.QueryRow(ctx, `SELECT failure_code, cost_usd_estimate::float8 FROM investigation_run WHERE id = $1::uuid`, string(r2.RunID)).Scan(&code, &nullCost)
+	if code != "model_api_error" || nullCost != nil {
+		t.Fatalf("%s %v", code, nullCost)
+	}
+}

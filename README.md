@@ -236,8 +236,16 @@ Regras que ficam no banco, e não só no código:
 
 - **Deduplicação**: `UNIQUE (source, external_id)` em `incident_case`. Retry do remetente ou várias réplicas do intake caem na mesma linha. Se o disparo falhar, `dispatched_at` fica nulo e o próximo retry tenta de novo.
 - **Um run por vez**: índice único parcial `WHERE status = 'RUNNING'`. Dois Jobs do mesmo incidente nunca investigam juntos.
-- **Falha com motivo**: `CHECK` exige `failure_code` quando o run é `FAILED` (`no_report`, `refused`, `max_iterations`, `integration_error`, `publish_error`, `unknown`).
+- **Falha com motivo**: `CHECK` exige `failure_code` quando o run é `FAILED` (`no_report`, `refused`, `max_iterations`, `integration_error`, `publish_error`, `model_api_error`, `unknown`). `model_api_error` é a API do modelo recusando ou falhando (sem crédito, chave inválida, limite de taxa), separado de um erro nosso.
 - **Relatório antes da mensagem**: o job salva o relatório e só então publica. Se o Slack falhar, o relatório não se perde e o run fica `FAILED` com `publish_error`.
+
+### Custo
+
+Cada run grava os tokens separados como a API devolve (entrada sem cache, leitura de cache, escrita de cache de 5 min e de 1 h, saída) e uma estimativa em dólares (`cost_usd_estimate`) pelo preço de tabela do modelo que de fato respondeu (`internal/pricing`). Modelo sem preço conhecido fica com custo `NULL`, nunca um chute. O custo também vai para o span raiz (`rca.cost_usd_estimate`), para somar por produto ou por dia no backend de rastreio.
+
+A API não devolve preço, só tokens. O valor cobrado de verdade aparece no Console e na API de custos da organização, agregado por dia e por workspace. Para conciliar, dê ao agente um workspace próprio e compare com a soma das estimativas do dia.
+
+Referência: a investigação de teste num cluster kind (OOMKilled depois de um deploy que baixou o limite de memória) fez 5 chamadas ao Claude Opus 5.5 e custou cerca de US$ 0,27.
 
 ### Migrations
 
@@ -336,7 +344,7 @@ go run ./cmd/sre-agent review
 ```
 
 ```text
-9aec347d-...  INC-1042 (checkout)  PRELIMINARY 70%  entrega=shadow  feedback=—
+9aec347d-...  INC-1042 (checkout)  PRELIMINARY 70%  entrega=shadow  feedback=—  custo≈US$0.27
   Checkout retornando 502 para parte dos usuários
   causa: Limite de memória do checkout-api reduzido de 1Gi para 512Mi na revisão 42
   https://cloud.langfuse.com/project/<id>/traces/051c6099...

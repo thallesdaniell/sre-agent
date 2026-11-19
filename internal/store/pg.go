@@ -80,11 +80,19 @@ func (s *PG) FinishRun(ctx context.Context, runID RunID, o RunOutcome) error {
 		}
 		code, detail = &c, &d
 	}
+	var cost *float64
+	if o.Usage.Priced {
+		cost = &o.Usage.CostUSD
+	}
+	u := o.Usage
 	_, err := s.pool.Exec(ctx, `
 		UPDATE investigation_run
-		   SET status = $2, failure_code = $3, failure_detail = $4, input_tokens = $5, output_tokens = $6, finished_at = now()
+		   SET status = $2, failure_code = $3, failure_detail = $4, input_tokens = $5, output_tokens = $6,
+		       cache_read_tokens = $7, cache_write_5m_tokens = $8, cache_write_1h_tokens = $9, cost_usd_estimate = $10,
+		       finished_at = now()
 		 WHERE id = $1::uuid AND status = 'RUNNING'`,
-		string(runID), status, code, detail, o.Usage.InputTokens, o.Usage.OutputTokens)
+		string(runID), status, code, detail, u.InputTokens, u.OutputTokens,
+		u.CacheReadTokens, u.CacheWrite5mTokens, u.CacheWrite1hTokens, cost)
 	return err
 }
 
@@ -109,7 +117,8 @@ func (s *PG) MarkDelivered(ctx context.Context, reportID ReportID, d Delivery) e
 func (s *PG) ListRecentReports(ctx context.Context, limit int) ([]ReportSummary, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT r.id::text, c.external_id, c.product, c.title, r.status, r.confidence::float8, r.root_cause,
-		       r.delivery, coalesce(run.trace_id, ''), to_char(r.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), coalesce(f.verdict, '')
+		       r.delivery, coalesce(run.trace_id, ''), to_char(r.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), coalesce(f.verdict, ''),
+		       run.cost_usd_estimate::float8
 		  FROM rca_report r
 		  JOIN incident_case c ON c.id = r.case_id
 		  JOIN investigation_run run ON run.id = r.run_id
@@ -125,7 +134,7 @@ func (s *PG) ListRecentReports(ctx context.Context, limit int) ([]ReportSummary,
 		var r ReportSummary
 		var delivery, verdict, id string
 		err := row.Scan(&id, &r.ExternalID, &r.Product, &r.Title, &r.Status, &r.Confidence, &r.RootCause,
-			&delivery, &r.TraceID, &r.CreatedAt, &verdict)
+			&delivery, &r.TraceID, &r.CreatedAt, &verdict, &r.CostUSD)
 		r.ReportID, r.Delivery, r.Feedback = ReportID(id), DeliveryKind(delivery), Verdict(verdict)
 		return r, err
 	})

@@ -193,7 +193,10 @@ func fakeAnthropic(t *testing.T, submitted any) (*httptest.Server, *[]string) {
 			reply = map[string]any{"content": []any{map[string]any{"type": "tool_use", "id": "toolu_01", "name": "submit_rca_report", "input": submitted}}, "stop_reason": "tool_use"}
 		}
 		reply["id"], reply["type"], reply["role"], reply["model"] = "msg_x", "message", "assistant", "claude-opus-5-5"
-		reply["stop_sequence"], reply["usage"] = nil, map[string]any{"input_tokens": 50, "output_tokens": 10}
+		reply["stop_sequence"], reply["usage"] = nil, map[string]any{
+			"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": 5000, "cache_creation_input_tokens": 300,
+			"cache_creation": map[string]any{"ephemeral_5m_input_tokens": 300, "ephemeral_1h_input_tokens": 0},
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(reply)
 	}))
@@ -247,5 +250,56 @@ func TestRelatorioInvalidoVoltaParaOModeloComoErro(t *testing.T) {
 	}
 	if len(*paths) != 2 {
 		t.Fatalf("esperava 2 chamadas ao modelo (o erro voltou para ele), vieram %d", len(*paths))
+	}
+}
+
+func TestCustoSomaTodosOsTiposDeTokenEVaiParaRunESpan(t *testing.T) {
+	exp, tel := setup(t)
+	srv, _ := fakeAnthropic(t, testfixtures.Report())
+	client := anthropic.NewClient(option.WithAPIKey("test"), option.WithBaseURL(srv.URL), option.WithMaxRetries(0), option.WithTracerProvider(tel.Provider))
+	st := memstore.New()
+	d := deps(st, tel)
+	d.Investigate = func(ctx context.Context, inc incident.Incident, ts *integrations.Toolset) (agent.Result, error) {
+		return agent.Investigate(ctx, client, inc, ts)
+	}
+	if _, err := job.Execute(t.Context(), testfixtures.Incident(), d); err != nil {
+		t.Fatal(err)
+	}
+	u := st.Runs[0].Outcome.Usage
+	// 2 chamadas, cada uma: 1000 entrada, 200 saída, 5000 cache lido, 300 cache escrito (5 min).
+	if u.InputTokens != 2000 || u.OutputTokens != 400 || u.CacheReadTokens != 10000 || u.CacheWrite5mTokens != 600 {
+		t.Fatalf("tokens errados: %+v", u)
+	}
+	// (1000*4 + 200*20 + 5000*0.20 + 300*5) / 1e6 por chamada = 0.0105; duas chamadas = 0.021.
+	if !u.Priced || u.CostUSD < 0.020999 || u.CostUSD > 0.021001 {
+		t.Fatalf("custo errado: %+v", u)
+	}
+	if got := attr(root(t, exp), "rca.cost_usd_estimate").AsFloat64(); got < 0.020999 || got > 0.021001 {
+		t.Fatalf("custo não foi para o span: %v", got)
+	}
+}
+
+func TestErroDaAPIDoModeloViraModelAPIError(t *testing.T) {
+	_, tel := setup(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Request-Id", "req_teste")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}`))
+	}))
+	t.Cleanup(srv.Close)
+	client := anthropic.NewClient(option.WithAPIKey("test"), option.WithBaseURL(srv.URL), option.WithMaxRetries(0), option.WithTracerProvider(tel.Provider))
+	st := memstore.New()
+	d := deps(st, tel)
+	d.Investigate = func(ctx context.Context, inc incident.Incident, ts *integrations.Toolset) (agent.Result, error) {
+		return agent.Investigate(ctx, client, inc, ts)
+	}
+	_, err := job.Execute(t.Context(), testfixtures.Incident(), d)
+	if err == nil {
+		t.Fatal("esperava erro")
+	}
+	o := st.Runs[0].Outcome
+	if o.Failure != store.FailureModelAPIError || !strings.Contains(o.Detail, "400") || !strings.Contains(o.Detail, "credit balance") {
+		t.Fatalf("classificação errada: %+v", o)
 	}
 }

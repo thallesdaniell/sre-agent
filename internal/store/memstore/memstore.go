@@ -136,6 +136,10 @@ func (s *Store) ListRecentReports(_ context.Context, limit int) ([]store.ReportS
 			Status: string(r.Report.Status), Confidence: r.Report.RootCause.Confidence, RootCause: r.Report.RootCause.Statement,
 			Delivery: r.Delivery.Kind, TraceID: s.runByID(r.RunID).TraceID, Feedback: s.lastVerdict(r.ID),
 		}
+		if u := s.runByID(r.RunID).Outcome.Usage; u.Priced {
+			cost := u.CostUSD
+			summary.CostUSD = &cost
+		}
 		out = append(out, summary)
 	}
 	return out, nil

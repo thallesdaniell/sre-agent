@@ -115,6 +115,7 @@ func investigateAndRecord(ctx context.Context, inc incident.Incident, d Deps, sp
 
 	fail := func(code store.FailureCode, usage store.Usage, cause error) (Result, error) {
 		span.SetAttributes(attribute.String("rca.outcome", "failed"), attribute.String("rca.failure_code", string(code)))
+		setUsageAttributes(span, usage)
 		if err := d.Store.FinishRun(context.WithoutCancel(ctx), runID, store.RunOutcome{Failure: code, Detail: cause.Error(), Usage: usage}); err != nil {
 			return Result{}, errors.Join(cause, err)
 		}
@@ -167,7 +168,22 @@ func investigateAndRecord(ctx context.Context, inc incident.Incident, d Deps, sp
 	if err := d.Store.FinishRun(ctx, runID, store.RunOutcome{Usage: result.Usage}); err != nil {
 		return Result{}, err
 	}
+	setUsageAttributes(span, result.Usage)
 	return Result{RunID: runID, Delivery: delivery.Kind, TraceID: traceID}, nil
+}
+
+// setUsageAttributes põe tokens e custo estimado no span raiz: dá para somar custo por produto,
+// por dia ou por resultado no backend de rastreio.
+func setUsageAttributes(span trace.Span, u store.Usage) {
+	span.SetAttributes(
+		attribute.Int64("rca.tokens.input", u.InputTokens),
+		attribute.Int64("rca.tokens.output", u.OutputTokens),
+		attribute.Int64("rca.tokens.cache_read", u.CacheReadTokens),
+		attribute.Int64("rca.tokens.cache_write", u.CacheWrite5mTokens+u.CacheWrite1hTokens),
+	)
+	if u.Priced {
+		span.SetAttributes(attribute.Float64("rca.cost_usd_estimate", u.CostUSD))
+	}
 }
 
 func mustJSON(v any) string {

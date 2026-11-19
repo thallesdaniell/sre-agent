@@ -17,6 +17,7 @@ func withReport(t *testing.T) (*memstore.Store, store.ReportID) {
 	run, _ := st.StartRun(ctx, claim.CaseID, "m", "4bf92f3577b34da6a3ce929d0e0e4736")
 	id, _ := st.SaveReport(ctx, run.RunID, claim.CaseID, testfixtures.Report(), "")
 	_ = st.MarkDelivered(ctx, id, store.Delivery{Kind: store.DeliveryShadow})
+	_ = st.FinishRun(ctx, run.RunID, store.RunOutcome{Usage: store.Usage{CostUSD: 0.26635, Priced: true}})
 	return st, id
 }
 
@@ -26,7 +27,7 @@ func TestListaComEntregaFeedbackELinkDoTrace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{string(id), "entrega=shadow", "https://lf/project/p1/traces/4bf92f3577b34da6a3ce929d0e0e4736"} {
+	for _, want := range []string{string(id), "entrega=shadow", "custo≈US$0.27", "https://lf/project/p1/traces/4bf92f3577b34da6a3ce929d0e0e4736"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("faltou %s", want)
 		}

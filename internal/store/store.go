@@ -36,12 +36,21 @@ const (
 	FailureMaxIterations    FailureCode = "max_iterations"
 	FailureIntegrationError FailureCode = "integration_error"
 	FailurePublishError     FailureCode = "publish_error"
+	FailureModelAPIError    FailureCode = "model_api_error" // a API do modelo recusou ou falhou
 	FailureUnknown          FailureCode = "unknown"
 )
 
+// Usage soma os tokens de todas as chamadas ao modelo de um run, separados como a API devolve.
+// InputTokens é só a entrada sem cache. CostUSD é a estimativa pelo preço de tabela; Priced fica
+// false se alguma chamada usou um modelo sem preço conhecido.
 type Usage struct {
-	InputTokens  int64
-	OutputTokens int64
+	InputTokens        int64
+	OutputTokens       int64
+	CacheReadTokens    int64
+	CacheWrite5mTokens int64
+	CacheWrite1hTokens int64
+	CostUSD            float64
+	Priced             bool
 }
 
 // RunOutcome: Failure vazio = sucesso. Falha sempre carrega o código.
@@ -114,6 +123,7 @@ type PastIncident struct {
 }
 
 type ReportSummary struct {
+	CostUSD    *float64 // estimativa do run; nil quando não há preço conhecido
 	ReportID   ReportID
 	ExternalID string
 	Product    string

@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/thallesdaniell/sre-agent/internal/incident"
 	"github.com/thallesdaniell/sre-agent/internal/integrations"
+	"github.com/thallesdaniell/sre-agent/internal/pricing"
 	"github.com/thallesdaniell/sre-agent/internal/report"
 	"github.com/thallesdaniell/sre-agent/internal/store"
 )
@@ -69,6 +71,49 @@ func submitReportTool(box *inbox) anthropic.BetaTool {
 		})
 }
 
+// addUsage soma os tokens de uma resposta e a estimativa de custo dela. O preço vem do modelo
+// que de fato respondeu (com fallback, pode não ser o pedido).
+func addUsage(total *store.Usage, msg *anthropic.BetaMessage, first bool) {
+	u := msg.Usage
+	t := pricing.Tokens{
+		Input:        u.InputTokens,
+		Output:       u.OutputTokens,
+		CacheRead:    u.CacheReadInputTokens,
+		CacheWrite5m: u.CacheCreation.Ephemeral5mInputTokens,
+		CacheWrite1h: u.CacheCreation.Ephemeral1hInputTokens,
+	}
+	// Respostas sem o detalhamento 5m/1h: trata toda a escrita como 5 minutos (o TTL padrão).
+	if t.CacheWrite5m+t.CacheWrite1h == 0 {
+		t.CacheWrite5m = u.CacheCreationInputTokens
+	}
+	total.InputTokens += t.Input
+	total.OutputTokens += t.Output
+	total.CacheReadTokens += t.CacheRead
+	total.CacheWrite5mTokens += t.CacheWrite5m
+	total.CacheWrite1hTokens += t.CacheWrite1h
+
+	cost, ok := pricing.Estimate(string(msg.Model), t)
+	if first {
+		total.Priced = true
+	}
+	total.Priced = total.Priced && ok
+	total.CostUSD += cost
+}
+
+// classifyCallError separa a recusa ou falha da API do modelo (sem crédito, chave inválida,
+// limite de taxa, indisponibilidade) de um erro nosso.
+func classifyCallError(err error, usage store.Usage) *InvestigationError {
+	var apiErr *anthropic.Error
+	if errors.As(err, &apiErr) {
+		return &InvestigationError{
+			Code:  store.FailureModelAPIError,
+			Msg:   fmt.Sprintf("API do modelo respondeu %d (request %s): %s", apiErr.StatusCode, apiErr.RequestID, apiErr.Message),
+			Usage: usage,
+		}
+	}
+	return &InvestigationError{Code: store.FailureUnknown, Msg: fmt.Sprintf("chamada ao modelo falhou: %v", err), Usage: usage}
+}
+
 // Investigate roda uma investigação. ctx carrega o span da investigação: os spans do SDK (loop,
 // chamadas ao modelo, tools) nascem dentro dele.
 func Investigate(ctx context.Context, client anthropic.Client, inc incident.Incident, toolset *integrations.Toolset) (Result, error) {
@@ -100,11 +145,10 @@ func Investigate(ctx context.Context, client anthropic.Client, inc incident.Inci
 	var last *anthropic.BetaMessage
 	for msg, err := range runner.All(ctx) {
 		if err != nil {
-			return Result{}, &InvestigationError{Code: store.FailureUnknown, Msg: fmt.Sprintf("chamada ao modelo falhou: %v", err), Usage: usage}
+			return Result{}, classifyCallError(err, usage)
 		}
+		addUsage(&usage, msg, last == nil)
 		last = msg
-		usage.InputTokens += msg.Usage.InputTokens
-		usage.OutputTokens += msg.Usage.OutputTokens
 		if box.get() != nil {
 			break // relatório já entregue: não deixa o loop seguir chamando tools
 		}

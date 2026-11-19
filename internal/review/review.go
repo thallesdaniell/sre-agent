@@ -75,8 +75,12 @@ func Format(reports []store.ReportSummary, traceTemplate string) string {
 		if feedback == "" {
 			feedback = "—"
 		}
-		blocks[i] = fmt.Sprintf("%s  %s (%s)  %s %d%%  entrega=%s  feedback=%s\n  %s\n  causa: %s\n  %s",
-			r.ReportID, r.ExternalID, r.Product, r.Status, int(math.Round(r.Confidence*100)), r.Delivery, feedback, r.Title, r.RootCause, link)
+		cost := "custo=?"
+		if r.CostUSD != nil {
+			cost = fmt.Sprintf("custo≈US$%.2f", *r.CostUSD)
+		}
+		blocks[i] = fmt.Sprintf("%s  %s (%s)  %s %d%%  entrega=%s  feedback=%s  %s\n  %s\n  causa: %s\n  %s",
+			r.ReportID, r.ExternalID, r.Product, r.Status, int(math.Round(r.Confidence*100)), r.Delivery, feedback, cost, r.Title, r.RootCause, link)
 	}
 	return strings.Join(blocks, "\n\n")
 }
