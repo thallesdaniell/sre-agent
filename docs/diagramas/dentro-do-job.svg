@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg class="dg" xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 992 362" width="992" height="362" role="img" aria-label="O job envia o prompt e as tools; o modelo pede list_pods; o job executa no cluster e devolve; o modelo pede rollout_history; o job executa e devolve; o modelo chama submit_rca_report; o job valida o schema e, se recusar, o erro volta ao modelo para ele corrigir.">
+<style>
+  svg { --raised:#ffffff; --fg:#1c222a; --muted:#5a6572; --line:#c7ced6; --lane:#eaedf1; --accent:#b0520b; }
+  @media (prefers-color-scheme: dark) {
+    svg { --raised:#181d24; --fg:#e2e6eb; --muted:#95a0ac; --line:#39424c; --lane:#1f262e; --accent:#f0a23a; }
+  }
+  .bg { fill: var(--raised); }
+  .dg { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--fg); }
+  text { fill: var(--fg); }
+  .t-title { font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 600; }
+  .t-sub, .t-label { fill: var(--muted); font-size: 11px; }
+  .t-acc { fill: var(--accent); }
+  .box { fill: var(--raised); stroke: var(--fg); stroke-width: 1.2; }
+  .box-acc { fill: var(--raised); stroke: var(--accent); stroke-width: 2; }
+  .zone { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 6 5; }
+  .lane { fill: var(--lane); }
+  .edge { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  .edge-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  .edge-dash { stroke: var(--fg); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .head { fill: var(--fg); }
+  .head-acc { fill: var(--accent); }
+</style>
+<rect class="bg" x="-16" y="-16" width="992" height="362" rx="10"/>
+          <defs>
+            <marker id="f2-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="f2-head-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <rect class="lane" x="0" y="10" width="960" height="120" rx="8"/>
+          <rect class="lane" x="0" y="190" width="960" height="130" rx="8"/>
+          <text class="t-title" x="20" y="60">API da Anthropic</text>
+          <text class="t-sub" x="20" y="78">o modelo decide</text>
+          <text class="t-title" x="20" y="246">job (seu container)</text>
+          <text class="t-sub" x="20" y="264">tools e credenciais</text>
+          <text class="t-sub" x="20" y="280">ficam aqui</text>
+
+          <!-- linha do job -->
+          <rect class="box" x="180" y="225" width="140" height="56" rx="6"/>
+          <text class="t-title" x="250" y="249" text-anchor="middle">envia prompt</text>
+          <text class="t-sub" x="250" y="267" text-anchor="middle">+ lista de tools</text>
+
+          <rect class="box" x="380" y="225" width="140" height="56" rx="6"/>
+          <text class="t-title" x="450" y="249" text-anchor="middle">list_pods</text>
+          <text class="t-sub" x="450" y="267" text-anchor="middle">só leitura</text>
+
+          <rect class="box" x="580" y="225" width="140" height="56" rx="6"/>
+          <text class="t-title" x="650" y="249" text-anchor="middle">rollout_history</text>
+          <text class="t-sub" x="650" y="267" text-anchor="middle">revisões e imagens</text>
+
+          <rect class="box-acc" x="780" y="225" width="160" height="56" rx="6"/>
+          <text class="t-title" x="860" y="249" text-anchor="middle">valida o relatório</text>
+          <text class="t-sub" x="860" y="267" text-anchor="middle">regras do schema</text>
+
+          <!-- linha do modelo -->
+          <rect class="box" x="280" y="42" width="140" height="56" rx="6"/>
+          <text class="t-title" x="350" y="66" text-anchor="middle">pede list_pods</text>
+          <text class="t-sub" x="350" y="84" text-anchor="middle">tool_use</text>
+
+          <rect class="box" x="480" y="42" width="140" height="56" rx="6"/>
+          <text class="t-title" x="550" y="66" text-anchor="middle">pede rollout</text>
+          <text class="t-sub" x="550" y="84" text-anchor="middle">tool_use</text>
+
+          <rect class="box" x="680" y="42" width="140" height="56" rx="6"/>
+          <text class="t-title" x="750" y="66" text-anchor="middle">entrega</text>
+          <text class="t-sub" x="750" y="84" text-anchor="middle">submit_rca_report</text>
+
+          <!-- setas: sobe = mensagem para o modelo, desce = pedido de tool -->
+          <line class="edge" x1="270" y1="225" x2="318" y2="100" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="382" y1="100" x2="430" y2="223" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="470" y1="225" x2="518" y2="100" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="582" y1="100" x2="630" y2="223" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="670" y1="225" x2="718" y2="100" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="782" y1="100" x2="830" y2="223" marker-end="url(#f2-head)"/>
+
+          <text class="t-label" x="298" y="132" text-anchor="end">prompt</text>
+          <text class="t-label" x="420" y="194">executa</text>
+          <text class="t-label" x="498" y="132" text-anchor="end">resultado</text>
+          <text class="t-label" x="620" y="194">executa</text>
+          <text class="t-label" x="698" y="132" text-anchor="end">resultado</text>
+          <text class="t-label" x="820" y="194">valida</text>
+
+          <path class="edge-acc" d="M 905 225 C 930 160, 880 112, 822 90" marker-end="url(#f2-head-acc)"/>
+          <text class="t-label t-acc" x="906" y="150">recusado:</text>
+          <text class="t-label t-acc" x="906" y="165">corrige</text>
+        </svg>

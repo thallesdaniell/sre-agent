@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg class="dg" xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 992 472" width="992" height="472" role="img" aria-label="O webhook chega ao intake, que deduplica no Postgres e cria um Job pela API do Kubernetes. O Job lê o cluster e o GitHub só com leitura, conversa com a API da Anthropic, registra o run no Postgres, envia spans ao backend de rastreio e publica no Slack só quando PUBLISH_MODE é slack.">
+<style>
+  svg { --raised:#ffffff; --fg:#1c222a; --muted:#5a6572; --line:#c7ced6; --lane:#eaedf1; --accent:#b0520b; }
+  @media (prefers-color-scheme: dark) {
+    svg { --raised:#181d24; --fg:#e2e6eb; --muted:#95a0ac; --line:#39424c; --lane:#1f262e; --accent:#f0a23a; }
+  }
+  .bg { fill: var(--raised); }
+  .dg { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--fg); }
+  text { fill: var(--fg); }
+  .t-title { font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 600; }
+  .t-sub, .t-label { fill: var(--muted); font-size: 11px; }
+  .t-acc { fill: var(--accent); }
+  .box { fill: var(--raised); stroke: var(--fg); stroke-width: 1.2; }
+  .box-acc { fill: var(--raised); stroke: var(--accent); stroke-width: 2; }
+  .zone { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 6 5; }
+  .lane { fill: var(--lane); }
+  .edge { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  .edge-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  .edge-dash { stroke: var(--fg); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .head { fill: var(--fg); }
+  .head-acc { fill: var(--accent); }
+</style>
+<rect class="bg" x="-16" y="-16" width="992" height="472" rx="10"/>
+          <defs>
+            <marker id="f1-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="f1-head-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- fonte -->
+          <rect class="box" x="20" y="180" width="130" height="56" rx="6"/>
+          <text class="t-title" x="85" y="204" text-anchor="middle">incident.io</text>
+          <text class="t-sub" x="85" y="222" text-anchor="middle">ou PagerDuty</text>
+
+          <!-- cluster -->
+          <rect class="zone" x="200" y="30" width="460" height="300" rx="10"/>
+          <text class="t-label" x="216" y="52">cluster Kubernetes</text>
+
+          <rect class="box" x="480" y="70" width="160" height="48" rx="6"/>
+          <text class="t-title" x="560" y="99" text-anchor="middle">API do Kubernetes</text>
+
+          <rect class="box" x="230" y="180" width="160" height="56" rx="6"/>
+          <text class="t-title" x="310" y="204" text-anchor="middle">intake</text>
+          <text class="t-sub" x="310" y="222" text-anchor="middle">sempre ligado, sem LLM</text>
+
+          <rect class="box" x="480" y="180" width="160" height="56" rx="6"/>
+          <text class="t-title" x="560" y="204" text-anchor="middle">job rca-INC-1042</text>
+          <text class="t-sub" x="560" y="222" text-anchor="middle">1 por incidente</text>
+
+          <!-- postgres -->
+          <rect class="box" x="300" y="372" width="280" height="50" rx="6"/>
+          <text class="t-title" x="440" y="395" text-anchor="middle">Postgres</text>
+          <text class="t-sub" x="440" y="412" text-anchor="middle">casos · runs · relatórios · feedback</text>
+
+          <!-- externos -->
+          <rect class="box" x="740" y="50" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="72" text-anchor="middle">API da Anthropic</text>
+          <text class="t-sub" x="840" y="89" text-anchor="middle">o modelo raciocina aqui</text>
+
+          <rect class="box" x="740" y="130" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="152" text-anchor="middle">GitHub · MCP</text>
+          <text class="t-sub" x="840" y="169" text-anchor="middle">MCP só via allowlist</text>
+
+          <rect class="box" x="740" y="210" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="232" text-anchor="middle">Slack</text>
+          <text class="t-sub" x="840" y="249" text-anchor="middle">só com PUBLISH_MODE=slack</text>
+
+          <rect class="box" x="740" y="290" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="312" text-anchor="middle">Langfuse ou OTLP</text>
+          <text class="t-sub" x="840" y="329" text-anchor="middle">um trace por investigação</text>
+
+          <!-- setas -->
+          <line class="edge" x1="150" y1="208" x2="228" y2="208" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="189" y="200" text-anchor="middle">webhook</text>
+          <text class="t-label" x="189" y="226" text-anchor="middle">+ HMAC</text>
+
+          <polyline class="edge" points="330,180 330,94 478,94" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="340" y="86">cria o Job</text>
+
+          <line class="edge" x1="530" y1="118" x2="530" y2="178" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="522" y="152" text-anchor="end">inicia o pod</text>
+
+          <line class="edge-acc" x1="610" y1="180" x2="610" y2="120" marker-end="url(#f1-head-acc)"/>
+          <text class="t-label t-acc" x="618" y="152">get/list</text>
+
+          <line class="edge" x1="300" y1="236" x2="300" y2="370" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="308" y="306">deduplica</text>
+
+          <line class="edge" x1="560" y1="236" x2="560" y2="370" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="552" y="300" text-anchor="end">run, relatório,</text>
+          <text class="t-label" x="552" y="315" text-anchor="end">trace_id</text>
+
+          <!-- barramento do job para fora -->
+          <line class="edge" x1="640" y1="208" x2="690" y2="208"/>
+          <line class="edge" x1="690" y1="74" x2="690" y2="314"/>
+          <line class="edge" x1="690" y1="74" x2="738" y2="74" marker-start="url(#f1-head)" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="714" y="66" text-anchor="middle">loop</text>
+          <line class="edge-acc" x1="690" y1="154" x2="738" y2="154" marker-end="url(#f1-head-acc)"/>
+          <text class="t-label t-acc" x="714" y="146" text-anchor="middle">lê</text>
+          <line class="edge-dash" x1="690" y1="234" x2="738" y2="234" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="714" y="226" text-anchor="middle">publica</text>
+          <line class="edge" x1="690" y1="314" x2="738" y2="314" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="714" y="306" text-anchor="middle">spans</text>
+
+          <!-- legenda -->
+          <line class="edge-acc" x1="20" y1="402" x2="52" y2="402"/>
+          <text class="t-label" x="60" y="406">só leitura</text>
+          <line class="edge-dash" x1="20" y1="424" x2="52" y2="424"/>
+          <text class="t-label" x="60" y="428">condicional</text>
+        </svg>

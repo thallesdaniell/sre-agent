@@ -77,6 +77,22 @@ sequenceDiagram
     Note over K,J: o Job termina e é apagado depois de 1 h
 ```
 
+### Em detalhe
+
+**O caminho de um incidente.** Só o intake fica ligado, e ele não chama o modelo. Em laranja, as chamadas só de leitura; tracejado, o que é condicional.
+
+![O webhook chega ao intake, que deduplica no Postgres e cria um Job pela API do Kubernetes. O Job lê o cluster e o GitHub só com leitura, conversa com a API da Anthropic, registra o run e envia spans; o Slack só recebe fora do modo sombra.](docs/diagramas/fluxo-do-incidente.svg)
+
+**Dentro do job: onde cada coisa roda.** O modelo só decide qual tool chamar; as tools rodam no container do Job, com as credenciais dele. Um relatório que viola as regras volta para o modelo como erro.
+
+![O job envia o prompt; o modelo pede list_pods; o job executa e devolve; o modelo pede rollout_history; o job executa e devolve; o modelo entrega o relatório; o job valida e, se recusar, o erro volta ao modelo.](docs/diagramas/dentro-do-job.svg)
+
+**Os estados de uma investigação.** O relatório é salvo antes da publicação; as linhas tracejadas são as proteções contra duplicidade, garantidas pelo banco.
+
+![O caso é recebido, o Job é disparado e o run entra em RUNNING; com relatório válido ele é salvo, publicado e termina SUCCEEDED. Falhas terminam em FAILED com failure_code. Entrega repetida responde duplicate e um segundo Job do mesmo caso é ignorado.](docs/diagramas/estados-da-investigacao.svg)
+
+Os SVGs seguem o tema claro ou escuro do leitor. A versão navegável dos três está em [`docs/diagramas/sre-agent-por-dentro.html`](docs/diagramas/sre-agent-por-dentro.html).
+
 - **Intake** (`internal/intake/`): o único processo sempre ligado. Autentica o webhook, valida o payload e cria um Kubernetes Job. O nome do Job vem do id do incidente, então o mesmo incidente nunca gera dois runs.
 - **Job** (`internal/job/`): um processo por incidente. Conecta as integrações, roda o agente, publica e termina.
 - **Agente** (`internal/agent/`): o Tool Runner do SDK cuida do loop. O agente termina chamando `submit_rca_report`, e `internal/report/report.go` impõe as regras do relatório (nunca `CONFIRMED`, confiança limitada quando a mudança só "veio antes", evidência obrigatória).

@@ -1,0 +1,332 @@
+<title>sre-agent por dentro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: coluna única de leitura; cada figura ocupa a largura e rola na horizontal no celular. */
+  :root {
+    --bg: #f5f6f8;
+    --raised: #ffffff;
+    --fg: #1c222a;
+    --muted: #5a6572;
+    --line: #c7ced6;
+    --lane: #eaedf1;
+    --accent: #b0520b;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11151a; --raised: #181d24; --fg: #e2e6eb; --muted: #95a0ac; --line: #39424c; --lane: #1a2028; --accent: #f0a23a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11151a; --raised: #181d24; --fg: #e2e6eb; --muted: #95a0ac; --line: #39424c; --lane: #1a2028; --accent: #f0a23a;
+    color-scheme: dark;
+  }
+
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.6; }
+  main {
+    max-width: 1040px; margin: 0 auto;
+    padding-block: 48px 72px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid; gap: 56px;
+  }
+  header { display: grid; gap: 12px; max-width: 68ch; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0; }
+  h1 { font-size: clamp(30px, 5vw, 42px); line-height: 1.15; margin: 0; font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; line-height: 1.3; margin: 0; font-weight: 600; text-wrap: balance; }
+  p { margin: 0; max-width: 68ch; }
+  .lede { color: var(--muted); font-size: 18px; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--lane); padding: 1px 5px; border-radius: 4px; }
+
+  section { display: grid; gap: 16px; }
+  figure { margin: 0; display: grid; gap: 12px; }
+  .scroll { overflow-x: auto; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  .scroll svg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--fg); }
+  figcaption { color: var(--muted); font-size: 14px; max-width: 72ch; }
+
+  /* Classes usadas dentro dos SVG: as cores vêm dos tokens, então valem nos dois temas. */
+  .dg { font-family: var(--mono); font-size: 12px; }
+  .dg text { fill: currentColor; }
+  .dg .t-title { font-family: var(--sans); font-size: 14px; font-weight: 600; }
+  .dg .t-sub { fill: var(--muted); font-size: 11px; }
+  .dg .t-label { fill: var(--muted); font-size: 11px; }
+  .dg .t-acc { fill: var(--accent); }
+  .dg .box { fill: var(--raised); stroke: currentColor; stroke-width: 1.2; }
+  .dg .box-acc { fill: var(--raised); stroke: var(--accent); stroke-width: 2; }
+  .dg .zone { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 6 5; }
+  .dg .lane { fill: var(--lane); stroke: none; }
+  .dg .edge { stroke: currentColor; stroke-width: 1.4; fill: none; }
+  .dg .edge-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  .dg .edge-dash { stroke: currentColor; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .dg .head { fill: currentColor; }
+  .dg .head-acc { fill: var(--accent); }
+
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 32px; }
+  .notes div { display: grid; gap: 4px; min-width: 0; }
+  .notes h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .notes p { color: var(--muted); font-size: 15px; }
+</style>
+
+<main>
+  <header>
+    <p class="eyebrow">sre-agent · Go · Claude</p>
+    <h1>sre-agent por dentro</h1>
+    <p class="lede">Um agente de plantão que investiga incidentes em modo só leitura e entrega uma hipótese de causa raiz. Três desenhos mostram o caminho de um incidente, onde cada coisa roda e por quais estados uma investigação passa.</p>
+  </header>
+
+  <section aria-labelledby="s1">
+    <h2 id="s1">O caminho de um incidente</h2>
+    <p>Só o intake fica ligado o tempo todo, e ele não chama o modelo. A investigação acontece num Job criado para aquele incidente, que lê o cluster com uma identidade sem permissão de escrita.</p>
+    <figure>
+      <div class="scroll">
+        <svg class="dg" viewBox="0 0 960 440" role="img" aria-label="O webhook chega ao intake, que deduplica no Postgres e cria um Job pela API do Kubernetes. O Job lê o cluster e o GitHub só com leitura, conversa com a API da Anthropic, registra o run no Postgres, envia spans ao backend de rastreio e publica no Slack só quando PUBLISH_MODE é slack.">
+          <defs>
+            <marker id="f1-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="f1-head-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- fonte -->
+          <rect class="box" x="20" y="180" width="130" height="56" rx="6"/>
+          <text class="t-title" x="85" y="204" text-anchor="middle">incident.io</text>
+          <text class="t-sub" x="85" y="222" text-anchor="middle">ou PagerDuty</text>
+
+          <!-- cluster -->
+          <rect class="zone" x="200" y="30" width="460" height="300" rx="10"/>
+          <text class="t-label" x="216" y="52">cluster Kubernetes</text>
+
+          <rect class="box" x="480" y="70" width="160" height="48" rx="6"/>
+          <text class="t-title" x="560" y="99" text-anchor="middle">API do Kubernetes</text>
+
+          <rect class="box" x="230" y="180" width="160" height="56" rx="6"/>
+          <text class="t-title" x="310" y="204" text-anchor="middle">intake</text>
+          <text class="t-sub" x="310" y="222" text-anchor="middle">sempre ligado, sem LLM</text>
+
+          <rect class="box" x="480" y="180" width="160" height="56" rx="6"/>
+          <text class="t-title" x="560" y="204" text-anchor="middle">job rca-INC-1042</text>
+          <text class="t-sub" x="560" y="222" text-anchor="middle">1 por incidente</text>
+
+          <!-- postgres -->
+          <rect class="box" x="300" y="372" width="280" height="50" rx="6"/>
+          <text class="t-title" x="440" y="395" text-anchor="middle">Postgres</text>
+          <text class="t-sub" x="440" y="412" text-anchor="middle">casos · runs · relatórios · feedback</text>
+
+          <!-- externos -->
+          <rect class="box" x="740" y="50" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="72" text-anchor="middle">API da Anthropic</text>
+          <text class="t-sub" x="840" y="89" text-anchor="middle">o modelo raciocina aqui</text>
+
+          <rect class="box" x="740" y="130" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="152" text-anchor="middle">GitHub · MCP</text>
+          <text class="t-sub" x="840" y="169" text-anchor="middle">MCP só via allowlist</text>
+
+          <rect class="box" x="740" y="210" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="232" text-anchor="middle">Slack</text>
+          <text class="t-sub" x="840" y="249" text-anchor="middle">só com PUBLISH_MODE=slack</text>
+
+          <rect class="box" x="740" y="290" width="200" height="48" rx="6"/>
+          <text class="t-title" x="840" y="312" text-anchor="middle">Langfuse ou OTLP</text>
+          <text class="t-sub" x="840" y="329" text-anchor="middle">um trace por investigação</text>
+
+          <!-- setas -->
+          <line class="edge" x1="150" y1="208" x2="228" y2="208" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="189" y="200" text-anchor="middle">webhook</text>
+          <text class="t-label" x="189" y="226" text-anchor="middle">+ HMAC</text>
+
+          <polyline class="edge" points="330,180 330,94 478,94" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="340" y="86">cria o Job</text>
+
+          <line class="edge" x1="530" y1="118" x2="530" y2="178" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="522" y="152" text-anchor="end">inicia o pod</text>
+
+          <line class="edge-acc" x1="610" y1="180" x2="610" y2="120" marker-end="url(#f1-head-acc)"/>
+          <text class="t-label t-acc" x="618" y="152">get/list</text>
+
+          <line class="edge" x1="300" y1="236" x2="300" y2="370" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="308" y="306">deduplica</text>
+
+          <line class="edge" x1="560" y1="236" x2="560" y2="370" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="552" y="300" text-anchor="end">run, relatório,</text>
+          <text class="t-label" x="552" y="315" text-anchor="end">trace_id</text>
+
+          <!-- barramento do job para fora -->
+          <line class="edge" x1="640" y1="208" x2="690" y2="208"/>
+          <line class="edge" x1="690" y1="74" x2="690" y2="314"/>
+          <line class="edge" x1="690" y1="74" x2="738" y2="74" marker-start="url(#f1-head)" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="714" y="66" text-anchor="middle">loop</text>
+          <line class="edge-acc" x1="690" y1="154" x2="738" y2="154" marker-end="url(#f1-head-acc)"/>
+          <text class="t-label t-acc" x="714" y="146" text-anchor="middle">lê</text>
+          <line class="edge-dash" x1="690" y1="234" x2="738" y2="234" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="714" y="226" text-anchor="middle">publica</text>
+          <line class="edge" x1="690" y1="314" x2="738" y2="314" marker-end="url(#f1-head)"/>
+          <text class="t-label" x="714" y="306" text-anchor="middle">spans</text>
+
+          <!-- legenda -->
+          <line class="edge-acc" x1="20" y1="402" x2="52" y2="402"/>
+          <text class="t-label" x="60" y="406">só leitura</text>
+          <line class="edge-dash" x1="20" y1="424" x2="52" y2="424"/>
+          <text class="t-label" x="60" y="428">condicional</text>
+        </svg>
+      </div>
+      <figcaption>O intake cria o Job e deduplica no Postgres. O Job lê o cluster e o GitHub sem permissão de escrita (em laranja), conversa com o modelo e registra tudo. A publicação no Slack só acontece fora do modo sombra.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s2">
+    <h2 id="s2">Dentro do job: onde cada coisa roda</h2>
+    <p>O modelo roda na API da Anthropic e só decide qual tool chamar. As tools executam no container do Job, com as credenciais dele. O modelo nunca vê um token, só o resultado de cada chamada.</p>
+    <figure>
+      <div class="scroll">
+        <svg class="dg" viewBox="0 0 960 330" role="img" aria-label="O job envia o prompt e as tools; o modelo pede list_pods; o job executa no cluster e devolve; o modelo pede rollout_history; o job executa e devolve; o modelo chama submit_rca_report; o job valida o schema e, se recusar, o erro volta ao modelo para ele corrigir.">
+          <defs>
+            <marker id="f2-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="f2-head-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <rect class="lane" x="0" y="10" width="960" height="120" rx="8"/>
+          <rect class="lane" x="0" y="190" width="960" height="130" rx="8"/>
+          <text class="t-title" x="20" y="60">API da Anthropic</text>
+          <text class="t-sub" x="20" y="78">o modelo decide</text>
+          <text class="t-title" x="20" y="246">job (seu container)</text>
+          <text class="t-sub" x="20" y="264">tools e credenciais</text>
+          <text class="t-sub" x="20" y="280">ficam aqui</text>
+
+          <!-- linha do job -->
+          <rect class="box" x="180" y="225" width="140" height="56" rx="6"/>
+          <text class="t-title" x="250" y="249" text-anchor="middle">envia prompt</text>
+          <text class="t-sub" x="250" y="267" text-anchor="middle">+ lista de tools</text>
+
+          <rect class="box" x="380" y="225" width="140" height="56" rx="6"/>
+          <text class="t-title" x="450" y="249" text-anchor="middle">list_pods</text>
+          <text class="t-sub" x="450" y="267" text-anchor="middle">só leitura</text>
+
+          <rect class="box" x="580" y="225" width="140" height="56" rx="6"/>
+          <text class="t-title" x="650" y="249" text-anchor="middle">rollout_history</text>
+          <text class="t-sub" x="650" y="267" text-anchor="middle">revisões e imagens</text>
+
+          <rect class="box-acc" x="780" y="225" width="160" height="56" rx="6"/>
+          <text class="t-title" x="860" y="249" text-anchor="middle">valida o relatório</text>
+          <text class="t-sub" x="860" y="267" text-anchor="middle">regras do schema</text>
+
+          <!-- linha do modelo -->
+          <rect class="box" x="280" y="42" width="140" height="56" rx="6"/>
+          <text class="t-title" x="350" y="66" text-anchor="middle">pede list_pods</text>
+          <text class="t-sub" x="350" y="84" text-anchor="middle">tool_use</text>
+
+          <rect class="box" x="480" y="42" width="140" height="56" rx="6"/>
+          <text class="t-title" x="550" y="66" text-anchor="middle">pede rollout</text>
+          <text class="t-sub" x="550" y="84" text-anchor="middle">tool_use</text>
+
+          <rect class="box" x="680" y="42" width="140" height="56" rx="6"/>
+          <text class="t-title" x="750" y="66" text-anchor="middle">entrega</text>
+          <text class="t-sub" x="750" y="84" text-anchor="middle">submit_rca_report</text>
+
+          <!-- setas: sobe = mensagem para o modelo, desce = pedido de tool -->
+          <line class="edge" x1="270" y1="225" x2="318" y2="100" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="382" y1="100" x2="430" y2="223" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="470" y1="225" x2="518" y2="100" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="582" y1="100" x2="630" y2="223" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="670" y1="225" x2="718" y2="100" marker-end="url(#f2-head)"/>
+          <line class="edge" x1="782" y1="100" x2="830" y2="223" marker-end="url(#f2-head)"/>
+
+          <text class="t-label" x="298" y="132" text-anchor="end">prompt</text>
+          <text class="t-label" x="420" y="194">executa</text>
+          <text class="t-label" x="498" y="132" text-anchor="end">resultado</text>
+          <text class="t-label" x="620" y="194">executa</text>
+          <text class="t-label" x="698" y="132" text-anchor="end">resultado</text>
+          <text class="t-label" x="820" y="194">valida</text>
+
+          <path class="edge-acc" d="M 905 225 C 930 160, 880 112, 822 90" marker-end="url(#f2-head-acc)"/>
+          <text class="t-label t-acc" x="906" y="150">recusado:</text>
+          <text class="t-label t-acc" x="906" y="165">corrige</text>
+        </svg>
+      </div>
+      <figcaption>Cada subida é uma chamada à API; cada descida é uma tool executada no Job. Um relatório que viola as regras (por exemplo, status CONFIRMED) volta para o modelo como erro, e ele reenvia corrigido.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s3">
+    <h2 id="s3">Os estados de uma investigação</h2>
+    <p>Todo run termina registrado: SUCCEEDED com o modo de entrega, ou FAILED com um código que diz por quê. O relatório é salvo antes da publicação, então uma falha do Slack não apaga a investigação.</p>
+    <figure>
+      <div class="scroll">
+        <svg class="dg" viewBox="0 0 1000 300" role="img" aria-label="O caso é recebido, o Job é disparado e o run entra em RUNNING. Com relatório válido, ele é salvo, publicado e o run termina SUCCEEDED com a entrega shadow, slack ou stdout. Falha do agente, da integração ou do Slack termina em FAILED com failure_code. Entrega repetida responde duplicate e um segundo Job do mesmo caso é ignorado.">
+          <defs>
+            <marker id="f3-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- falha -->
+          <rect class="box" x="260" y="16" width="540" height="52" rx="6"/>
+          <text class="t-title" x="530" y="38" text-anchor="middle">FAILED + failure_code</text>
+          <text class="t-sub" x="530" y="56" text-anchor="middle">no_report · refused · max_iterations · integration_error · publish_error</text>
+
+          <!-- fluxo principal -->
+          <rect class="box" x="20" y="124" width="120" height="50" rx="6"/>
+          <text class="t-title" x="80" y="146" text-anchor="middle">caso recebido</text>
+          <text class="t-sub" x="80" y="163" text-anchor="middle">incident_case</text>
+
+          <rect class="box" x="200" y="124" width="120" height="50" rx="6"/>
+          <text class="t-title" x="260" y="146" text-anchor="middle">Job disparado</text>
+          <text class="t-sub" x="260" y="163" text-anchor="middle">dispatched_at</text>
+
+          <rect class="box" x="380" y="124" width="120" height="50" rx="6"/>
+          <text class="t-title" x="440" y="146" text-anchor="middle">RUNNING</text>
+          <text class="t-sub" x="440" y="163" text-anchor="middle">investigation_run</text>
+
+          <rect class="box-acc" x="552" y="124" width="136" height="50" rx="6"/>
+          <text class="t-title" x="620" y="146" text-anchor="middle">relatório salvo</text>
+          <text class="t-sub" x="620" y="163" text-anchor="middle">rca_report</text>
+
+          <rect class="box" x="745" y="124" width="235" height="50" rx="6"/>
+          <text class="t-title" x="862" y="146" text-anchor="middle">SUCCEEDED</text>
+          <text class="t-sub" x="862" y="163" text-anchor="middle">entrega: shadow · slack · stdout</text>
+
+          <line class="edge" x1="140" y1="149" x2="198" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="169" y="141" text-anchor="middle">dispara</text>
+          <line class="edge" x1="320" y1="149" x2="378" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="349" y="141" text-anchor="middle">startRun</text>
+          <line class="edge" x1="500" y1="149" x2="550" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="526" y="141" text-anchor="middle">válido</text>
+          <line class="edge" x1="688" y1="149" x2="743" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="715" y="141" text-anchor="middle">publica</text>
+
+          <!-- desvios para a falha -->
+          <line class="edge" x1="440" y1="124" x2="470" y2="70" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="448" y="100" text-anchor="end">agente ou</text>
+          <text class="t-label" x="448" y="114" text-anchor="end">integração falhou</text>
+          <line class="edge" x1="620" y1="124" x2="590" y2="70" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="614" y="100">Slack</text>
+          <text class="t-label" x="614" y="114">falhou</text>
+
+          <!-- desvios de duplicidade -->
+          <rect class="box" x="20" y="232" width="120" height="50" rx="6"/>
+          <text class="t-title" x="80" y="254" text-anchor="middle">responde</text>
+          <text class="t-sub" x="80" y="271" text-anchor="middle">duplicate</text>
+          <line class="edge-dash" x1="80" y1="174" x2="80" y2="230" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="88" y="206">já disparado</text>
+
+          <rect class="box" x="300" y="232" width="180" height="50" rx="6"/>
+          <text class="t-title" x="390" y="254" text-anchor="middle">ignorado</text>
+          <text class="t-sub" x="390" y="271" text-anchor="middle">já há um run em andamento</text>
+          <line class="edge-dash" x1="275" y1="174" x2="340" y2="230" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="316" y="198">2º Job do mesmo caso</text>
+        </svg>
+      </div>
+      <figcaption>Linhas tracejadas são as proteções contra duplicidade: a mesma entrega não dispara de novo (UNIQUE no caso) e um segundo Job não investiga junto (índice único parcial em RUNNING). O relatório salvo, em destaque, vem antes da publicação.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s4">
+    <h2 id="s4">Onde cada parte mora no código</h2>
+    <div class="notes">
+      <div><h3>Intake</h3><p><code>internal/intake</code>: HMAC, dedupe e o Job criado com <code>client-go</code>.</p></div>
+      <div><h3>Job</h3><p><code>internal/job</code>: span raiz, ciclo do run, relatório antes da publicação.</p></div>
+      <div><h3>Agente</h3><p><code>internal/agent</code>: Tool Runner, prompt e a tool <code>submit_rca_report</code>.</p></div>
+      <div><h3>Integrações</h3><p><code>internal/integrations</code>: Kubernetes, GitHub, histórico e MCP com allowlist.</p></div>
+      <div><h3>Estado</h3><p><code>internal/store</code> e <code>migrations</code>: Postgres com as regras no próprio banco.</p></div>
+      <div><h3>Rastreio</h3><p><code>internal/telemetry</code>: OpenTelemetry com destino escolhido por ambiente.</p></div>
+    </div>
+  </section>
+</main>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg class="dg" xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 1032 332" width="1032" height="332" role="img" aria-label="O caso é recebido, o Job é disparado e o run entra em RUNNING. Com relatório válido, ele é salvo, publicado e o run termina SUCCEEDED com a entrega shadow, slack ou stdout. Falha do agente, da integração ou do Slack termina em FAILED com failure_code. Entrega repetida responde duplicate e um segundo Job do mesmo caso é ignorado.">
+<style>
+  svg { --raised:#ffffff; --fg:#1c222a; --muted:#5a6572; --line:#c7ced6; --lane:#eaedf1; --accent:#b0520b; }
+  @media (prefers-color-scheme: dark) {
+    svg { --raised:#181d24; --fg:#e2e6eb; --muted:#95a0ac; --line:#39424c; --lane:#1f262e; --accent:#f0a23a; }
+  }
+  .bg { fill: var(--raised); }
+  .dg { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--fg); }
+  text { fill: var(--fg); }
+  .t-title { font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 600; }
+  .t-sub, .t-label { fill: var(--muted); font-size: 11px; }
+  .t-acc { fill: var(--accent); }
+  .box { fill: var(--raised); stroke: var(--fg); stroke-width: 1.2; }
+  .box-acc { fill: var(--raised); stroke: var(--accent); stroke-width: 2; }
+  .zone { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 6 5; }
+  .lane { fill: var(--lane); }
+  .edge { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  .edge-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+  .edge-dash { stroke: var(--fg); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .head { fill: var(--fg); }
+  .head-acc { fill: var(--accent); }
+</style>
+<rect class="bg" x="-16" y="-16" width="1032" height="332" rx="10"/>
+          <defs>
+            <marker id="f3-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <!-- falha -->
+          <rect class="box" x="260" y="16" width="540" height="52" rx="6"/>
+          <text class="t-title" x="530" y="38" text-anchor="middle">FAILED + failure_code</text>
+          <text class="t-sub" x="530" y="56" text-anchor="middle">no_report · refused · max_iterations · integration_error · publish_error</text>
+
+          <!-- fluxo principal -->
+          <rect class="box" x="20" y="124" width="120" height="50" rx="6"/>
+          <text class="t-title" x="80" y="146" text-anchor="middle">caso recebido</text>
+          <text class="t-sub" x="80" y="163" text-anchor="middle">incident_case</text>
+
+          <rect class="box" x="200" y="124" width="120" height="50" rx="6"/>
+          <text class="t-title" x="260" y="146" text-anchor="middle">Job disparado</text>
+          <text class="t-sub" x="260" y="163" text-anchor="middle">dispatched_at</text>
+
+          <rect class="box" x="380" y="124" width="120" height="50" rx="6"/>
+          <text class="t-title" x="440" y="146" text-anchor="middle">RUNNING</text>
+          <text class="t-sub" x="440" y="163" text-anchor="middle">investigation_run</text>
+
+          <rect class="box-acc" x="552" y="124" width="136" height="50" rx="6"/>
+          <text class="t-title" x="620" y="146" text-anchor="middle">relatório salvo</text>
+          <text class="t-sub" x="620" y="163" text-anchor="middle">rca_report</text>
+
+          <rect class="box" x="745" y="124" width="235" height="50" rx="6"/>
+          <text class="t-title" x="862" y="146" text-anchor="middle">SUCCEEDED</text>
+          <text class="t-sub" x="862" y="163" text-anchor="middle">entrega: shadow · slack · stdout</text>
+
+          <line class="edge" x1="140" y1="149" x2="198" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="169" y="141" text-anchor="middle">dispara</text>
+          <line class="edge" x1="320" y1="149" x2="378" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="349" y="141" text-anchor="middle">startRun</text>
+          <line class="edge" x1="500" y1="149" x2="550" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="526" y="141" text-anchor="middle">válido</text>
+          <line class="edge" x1="688" y1="149" x2="743" y2="149" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="715" y="141" text-anchor="middle">publica</text>
+
+          <!-- desvios para a falha -->
+          <line class="edge" x1="440" y1="124" x2="470" y2="70" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="448" y="100" text-anchor="end">agente ou</text>
+          <text class="t-label" x="448" y="114" text-anchor="end">integração falhou</text>
+          <line class="edge" x1="620" y1="124" x2="590" y2="70" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="614" y="100">Slack</text>
+          <text class="t-label" x="614" y="114">falhou</text>
+
+          <!-- desvios de duplicidade -->
+          <rect class="box" x="20" y="232" width="120" height="50" rx="6"/>
+          <text class="t-title" x="80" y="254" text-anchor="middle">responde</text>
+          <text class="t-sub" x="80" y="271" text-anchor="middle">duplicate</text>
+          <line class="edge-dash" x1="80" y1="174" x2="80" y2="230" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="88" y="206">já disparado</text>
+
+          <rect class="box" x="300" y="232" width="180" height="50" rx="6"/>
+          <text class="t-title" x="390" y="254" text-anchor="middle">ignorado</text>
+          <text class="t-sub" x="390" y="271" text-anchor="middle">já há um run em andamento</text>
+          <line class="edge-dash" x1="275" y1="174" x2="340" y2="230" marker-end="url(#f3-head)"/>
+          <text class="t-label" x="316" y="198">2º Job do mesmo caso</text>
+        </svg>
