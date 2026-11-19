@@ -7,16 +7,61 @@ Projeto de estudo de agentes de IA para SRE, construído com o [Anthropic TypeSc
 
 ## Como funciona
 
+### Visão geral
+
+```mermaid
+flowchart LR
+    src["incident.io / PagerDuty / Datadog"] -- "webhook assinado (HMAC)" --> intake
+
+    subgraph cluster["Cluster Kubernetes"]
+        intake["Intake<br/>sempre ligado, sem LLM"]
+        job["Job efêmero<br/>um por incidente"]
+        intake -- "cria Job<br/>(nome = id do incidente)" --> job
+    end
+
+    job <-->|"loop do agente<br/>(Tool Runner)"| claude["Claude API"]
+
+    subgraph fontes["Integrações (só leitura)"]
+        k8s["Kubernetes<br/>pods, logs, eventos, rollouts"]
+        gh["GitHub<br/>PRs e deployments"]
+        mcp["Servidores MCP<br/>Datadog, Argo CD, Sentry..."]
+    end
+
+    job --> k8s
+    job --> gh
+    job --> mcp
+    job -- "relatório validado<br/>e renderizado" --> slack["Canal do incidente<br/>no Slack"]
 ```
-incident.io / PagerDuty / Datadog ──webhook──▶ intake (sempre ligado, sem LLM)
-                                                 valida HMAC, filtra, deduplica
-                                                        │ cria um Job por incidente
-                                                        ▼
-                                  Job efêmero: loop do agente (Tool Runner)
-                                  tools = integrações habilitadas + submit_rca_report
-                                                        │
-                                                        ▼
-                                  relatório validado (Zod) ──▶ servidor renderiza ──▶ Slack
+
+### Uma investigação, passo a passo
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant F as Ferramenta de incidentes
+    participant I as Intake
+    participant K as Kubernetes API
+    participant J as Job do agente
+    participant C as Claude
+    participant T as Integrações
+    participant S as Slack
+
+    F->>I: POST /webhooks/incident (x-timestamp, x-signature)
+    I->>I: valida HMAC, idade ≤ 5 min, payload e inventário
+    I->>K: cria Job rca-ID (409 = já existe, ignora)
+    I-->>F: 202 Accepted
+    K->>J: inicia o container com a ServiceAccount só de leitura
+    J->>T: conecta integrações habilitadas (MCP filtrado pela allowlist)
+    loop até entregar o relatório (máx. 30 voltas)
+        J->>C: prompt + fontes por categoria + resultados das tools
+        C-->>J: pede uma tool de evidência
+        J->>T: executa com argumentos validados e saída limitada
+        T-->>J: evidência
+    end
+    C-->>J: submit_rca_report
+    J->>J: valida o schema (nunca CONFIRMED, regras de confiança)
+    J->>S: publica a mensagem renderizada pelo servidor
+    Note over K,J: o Job termina e é apagado depois de 1 h
 ```
 
 - **Intake** (`src/intake/`): o único processo sempre ligado. Autentica o webhook, valida o payload e cria um Kubernetes Job. O nome do Job vem do id do incidente, então o mesmo incidente nunca gera dois runs.
