@@ -49,6 +49,9 @@ export async function investigate(
     system: [{ type: "text", text: buildSystemPrompt(toolset.sourcesSummary), cache_control: { type: "ephemeral" } }],
     tools: [...toolset.tools, submitReportTool(inbox)],
     messages: [{ role: "user", content: incidentMessage(incident) }],
+  }, {
+    // Agrupa no backend de rastreio todas as chamadas desta investigação (gen_ai.conversation.id).
+    openTelemetry: { conversationId: `${incident.source}:${incident.id}` },
   });
 
   const usage = { inputTokens: 0, outputTokens: 0 };

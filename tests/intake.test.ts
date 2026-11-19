@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ScopeRegistry } from "../src/scope.js";
 import type { Incident } from "../src/incident.js";
-import { jobName, type Dispatcher } from "../src/intake/dispatch.js";
+import { forwardedEnv, jobName, type Dispatcher } from "../src/intake/dispatch.js";
 import { sign, verifySignature } from "../src/intake/hmac.js";
 import { buildApp } from "../src/intake/server.js";
 import { MemoryStore } from "./support/memory-store.js";
@@ -109,6 +109,14 @@ describe("deduplicação pelo banco", () => {
 describe("escopo e nome do job", () => {
   it("recusa namespace que não pertence ao produto", () => {
     expect(() => scopes.namespace("checkout", "kube-system")).toThrow(/não pertence/);
+  });
+
+  it("repassa ao Job só a configuração conhecida, nunca segredos", () => {
+    const env = forwardedEnv({ PUBLISH_MODE: "shadow", TRACE_CONTENT: "content", LANGFUSE_SECRET_KEY: "sk", DATABASE_URL: "postgres://x" });
+    expect(env).toEqual([
+      { name: "PUBLISH_MODE", value: "shadow" },
+      { name: "TRACE_CONTENT", value: "content" },
+    ]);
   });
 
   it("gera o mesmo nome de Job para o mesmo incidente", () => {

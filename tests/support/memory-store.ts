@@ -4,10 +4,12 @@ import type { RcaReport } from "../../src/report/schema.js";
 import type {
   CaseClaim,
   CaseId,
+  Delivery,
   PastIncident,
   PostmortemHit,
   PostmortemInput,
   ReportId,
+  ReportSummary,
   RunId,
   RunOutcome,
   StartRun,
@@ -24,6 +26,7 @@ interface CaseRow {
 interface RunRow {
   id: RunId;
   caseId: CaseId;
+  traceId?: string | undefined;
   status: "RUNNING" | "SUCCEEDED" | "FAILED";
   outcome?: RunOutcome;
 }
@@ -32,6 +35,7 @@ interface ReportRow {
   runId: RunId;
   caseId: CaseId;
   report: RcaReport;
+  delivery: ReportSummary["delivery"];
   slackTs?: string;
 }
 
@@ -58,9 +62,9 @@ export class MemoryStore implements Store {
     row.ref ??= ref;
   }
 
-  async startRun(caseId: CaseId): Promise<StartRun> {
+  async startRun(caseId: CaseId, _model?: string, traceId?: string): Promise<StartRun> {
     if (this.runs.some((r) => r.caseId === caseId && r.status === "RUNNING")) return { kind: "already_running", caseId };
-    const run: RunRow = { id: randomUUID() as RunId, caseId, status: "RUNNING" };
+    const run: RunRow = { id: randomUUID() as RunId, caseId, status: "RUNNING", traceId };
     this.runs.push(run);
     return { kind: "started", runId: run.id };
   }
@@ -73,13 +77,37 @@ export class MemoryStore implements Store {
   }
 
   async saveReport(args: { runId: RunId; caseId: CaseId; report: RcaReport }): Promise<ReportId> {
-    const row: ReportRow = { id: randomUUID() as ReportId, runId: args.runId, caseId: args.caseId, report: args.report };
+    const row: ReportRow = { id: randomUUID() as ReportId, runId: args.runId, caseId: args.caseId, report: args.report, delivery: "pending" };
     this.reports.push(row);
     return row.id;
   }
 
-  async markPublished(reportId: ReportId, slackTs: string): Promise<void> {
-    this.reports.find((r) => r.id === reportId)!.slackTs = slackTs;
+  async markDelivered(reportId: ReportId, delivery: Delivery): Promise<void> {
+    const row = this.reports.find((r) => r.id === reportId)!;
+    row.delivery = delivery.kind;
+    if (delivery.kind === "slack") row.slackTs = delivery.ts;
+  }
+
+  async listRecentReports(limit: number): Promise<ReportSummary[]> {
+    return this.reports
+      .slice(-limit)
+      .reverse()
+      .map((r) => {
+        const c = this.cases.find((x) => x.id === r.caseId)!;
+        return {
+          reportId: r.id,
+          externalId: c.incident.id,
+          product: c.incident.product,
+          title: c.incident.title,
+          status: r.report.status,
+          confidence: r.report.rootCause.confidence,
+          rootCause: r.report.rootCause.statement,
+          delivery: r.delivery,
+          traceId: this.runs.find((x) => x.id === r.runId)?.traceId ?? null,
+          createdAt: new Date().toISOString(),
+          feedback: this.feedback.filter((f) => f.reportId === r.id).at(-1)?.verdict ?? null,
+        };
+      });
   }
 
   async recordFeedback(args: { reportId: ReportId; verdict: Verdict; author: string; actualCause?: string | undefined }): Promise<void> {

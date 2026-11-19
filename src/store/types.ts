@@ -18,6 +18,23 @@ export type RunOutcome =
 
 export type Verdict = "correct" | "partially_correct" | "wrong";
 
+/** Como o relatório chegou às pessoas. shadow = investigou e salvou, mas não publicou de propósito. */
+export type Delivery = { kind: "slack"; ts: string } | { kind: "shadow" } | { kind: "stdout" };
+
+export interface ReportSummary {
+  reportId: ReportId;
+  externalId: string;
+  product: string;
+  title: string;
+  status: string;
+  confidence: number;
+  rootCause: string;
+  delivery: "pending" | "slack" | "shadow" | "stdout";
+  traceId: string | null;
+  createdAt: string;
+  feedback: Verdict | null;
+}
+
 export interface PostmortemInput {
   slug: string;
   product: string;
@@ -60,11 +77,13 @@ export interface Store {
   claimCase(incident: Incident): Promise<CaseClaim>;
   markDispatched(caseId: CaseId, ref: string): Promise<void>;
 
-  startRun(caseId: CaseId, model: string): Promise<StartRun>;
+  startRun(caseId: CaseId, model: string, traceId?: string): Promise<StartRun>;
   finishRun(runId: RunId, outcome: RunOutcome): Promise<void>;
 
   saveReport(args: { runId: RunId; caseId: CaseId; report: RcaReport; slackChannel?: string | undefined }): Promise<ReportId>;
-  markPublished(reportId: ReportId, slackTs: string): Promise<void>;
+  markDelivered(reportId: ReportId, delivery: Delivery): Promise<void>;
+  /** Relatórios recentes, para revisar (principalmente no modo sombra) e dar feedback. */
+  listRecentReports(limit: number): Promise<ReportSummary[]>;
   recordFeedback(args: { reportId: ReportId; verdict: Verdict; author: string; actualCause?: string | undefined }): Promise<void>;
 
   upsertPostmortem(postmortem: PostmortemInput): Promise<void>;

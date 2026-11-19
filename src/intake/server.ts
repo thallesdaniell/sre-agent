@@ -9,18 +9,22 @@ import { Incident } from "../incident.js";
 import { runJob } from "../job.js";
 import { PgStore } from "../store/pg-store.js";
 import type { Store } from "../store/types.js";
-import { KubernetesJobDispatcher, jobName, type Dispatcher } from "./dispatch.js";
+import { initTelemetry, type Telemetry } from "../telemetry.js";
+import { KubernetesJobDispatcher, forwardedEnv, jobName, type Dispatcher } from "./dispatch.js";
 import { verifySignature } from "./hmac.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
 /** Dev: roda a investigação no próprio processo, sem esperar (responde 202 na hora). */
 export class LocalDispatcher implements Dispatcher {
-  constructor(private readonly store: Store) {}
+  constructor(
+    private readonly store: Store,
+    private readonly telemetry: Telemetry,
+  ) {}
 
   async dispatch(incident: Incident) {
     const ref = jobName(incident.id);
-    void runJob(incident, this.store).catch((error: unknown) => console.error("investigação falhou", ref, error));
+    void runJob(incident, { store: this.store, telemetry: this.telemetry }).catch((error: unknown) => console.error("investigação falhou", ref, error));
     return { kind: "dispatched" as const, ref };
   }
 }
@@ -76,24 +80,26 @@ export function buildApp(deps: { secret: string; scopes: ScopeRegistry; store: S
   return app;
 }
 
-function dispatcherFor(env: Env, store: Store): Dispatcher {
-  if (env.DISPATCH_MODE === "local") return new LocalDispatcher(store);
+function dispatcherFor(env: Env, store: Store, telemetry: Telemetry): Dispatcher {
+  if (env.DISPATCH_MODE === "local") return new LocalDispatcher(store, telemetry);
   return new KubernetesJobDispatcher({
     namespace: env.JOB_NAMESPACE,
     image: env.JOB_IMAGE,
     serviceAccount: env.JOB_SERVICE_ACCOUNT,
     secretName: env.JOB_SECRET_NAME,
+    env: forwardedEnv(process.env),
   });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const env = loadEnv();
   const store = new PgStore(createPool(env.DATABASE_URL));
+  const telemetry = initTelemetry({ serviceName: "sre-agent-intake" });
   const app = buildApp({
     secret: env.WEBHOOK_SECRET,
     scopes: loadAgentConfig(env.AGENT_CONFIG_FILE).scopes,
     store,
-    dispatcher: dispatcherFor(env, store),
+    dispatcher: dispatcherFor(env, store, telemetry),
   });
   serve({ fetch: app.fetch, port: env.PORT }, (info) => console.log(`intake ouvindo em :${info.port} (${env.DISPATCH_MODE})`));
 }

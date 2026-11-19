@@ -72,7 +72,7 @@ describe.skipIf(!url)("PgStore (Postgres real)", () => {
     const run = await store.startRun(caseId, "claude-opus-5-5");
     if (run.kind !== "started") throw new Error("esperava started");
     const reportId = await store.saveReport({ runId: run.runId, caseId, report: sampleReport, slackChannel: "#inc" });
-    await store.markPublished(reportId, "1731.0001");
+    await store.markDelivered(reportId, { kind: "slack", ts: "1731.0001" });
     await store.recordFeedback({ reportId, verdict: "partially_correct", author: "ana", actualCause: "Memória e também pool de conexões" });
     await store.recordFeedback({ reportId, verdict: "correct", author: "ana" }); // mesma pessoa: atualiza
 

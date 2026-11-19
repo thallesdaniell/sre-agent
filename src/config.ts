@@ -13,6 +13,9 @@ const Env = z.object({
   JOB_SERVICE_ACCOUNT: z.string().default("sre-agent-readonly"),
   JOB_SECRET_NAME: z.string().default("sre-agent-secrets"),
   PORT: z.coerce.number().int().default(8080),
+  // Modo sombra por padrão: publicar no canal é decisão explícita, depois que o time confiar no agente.
+  PUBLISH_MODE: z.enum(["shadow", "slack"]).default("shadow"),
+  TRACE_URL_TEMPLATE: z.string().optional(),
 });
 export type Env = z.infer<typeof Env>;
 

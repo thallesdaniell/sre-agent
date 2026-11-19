@@ -9,6 +9,23 @@ export interface Dispatcher {
 }
 
 /** Nome do Job derivado do id do incidente: o mesmo incidente nunca gera dois Jobs. */
+/**
+ * Configuração (não segredo) que o intake repassa ao Job. Segredos chegam pelo Secret (envFrom);
+ * isto aqui é o que muda o comportamento: modo de publicação e destino do rastreio.
+ */
+export const FORWARDED_JOB_ENV = [
+  "PUBLISH_MODE",
+  "TRACE_CONTENT",
+  "TRACE_URL_TEMPLATE",
+  "LANGFUSE_BASE_URL",
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
+  "APP_VERSION",
+] as const;
+
+export function forwardedEnv(source: NodeJS.ProcessEnv): { name: string; value: string }[] {
+  return FORWARDED_JOB_ENV.flatMap((name) => (source[name] ? [{ name, value: source[name]! }] : []));
+}
+
 export function jobName(incidentId: string): string {
   const slug = incidentId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 50);
   return `rca-${slug}`.replace(/-$/, "");
@@ -22,7 +39,13 @@ export class KubernetesJobDispatcher implements Dispatcher {
   private readonly batch: BatchV1Api;
 
   constructor(
-    private readonly options: { namespace: string; image: string; serviceAccount: string; secretName: string },
+    private readonly options: {
+      namespace: string;
+      image: string;
+      serviceAccount: string;
+      secretName: string;
+      env?: { name: string; value: string }[];
+    },
     kubeConfig?: KubeConfig,
   ) {
     const kc = kubeConfig ?? new KubeConfig();
@@ -64,6 +87,7 @@ export class KubernetesJobDispatcher implements Dispatcher {
                 env: [
                   { name: "INCIDENT_JSON", value: JSON.stringify(incident) },
                   { name: "AGENT_CONFIG_FILE", value: "/config/agent.config.json" },
+                  ...(this.options.env ?? []),
                 ],
                 envFrom: [{ secretRef: { name: this.options.secretName } }],
                 volumeMounts: [{ name: "config", mountPath: "/config", readOnly: true }],

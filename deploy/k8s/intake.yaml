@@ -3,6 +3,7 @@
 #   kubectl -n sre-agent create secret generic sre-agent-secrets \
 #     --from-literal=ANTHROPIC_API_KEY=... --from-literal=WEBHOOK_SECRET=... \
 #     --from-literal=DATABASE_URL=postgres://... \
+#     --from-literal=LANGFUSE_PUBLIC_KEY=... --from-literal=LANGFUSE_SECRET_KEY=... \
 #     --from-literal=GITHUB_TOKEN=... --from-literal=SLACK_BOT_TOKEN=...
 apiVersion: v1
 kind: ConfigMap
@@ -50,6 +51,8 @@ spec:
             - { name: JOB_NAMESPACE, value: sre-agent }
             - { name: JOB_IMAGE, value: "ghcr.io/sua-org/sre-agent:latest" }
             - { name: AGENT_CONFIG_FILE, value: /config/agent.config.json }
+            # Comece em shadow. Troque para slack quando o time confiar nas conclusões.
+            - { name: PUBLISH_MODE, value: shadow }
             - name: WEBHOOK_SECRET
               valueFrom: { secretKeyRef: { name: sre-agent-secrets, key: WEBHOOK_SECRET } }
             - name: DATABASE_URL

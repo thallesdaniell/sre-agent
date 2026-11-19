@@ -27,7 +27,10 @@ function bullets(items: string[], max = 5): string {
  * O servidor, e não o agente, decide a forma da mensagem: ordem, títulos e o aviso de que a
  * hipótese é preliminar. O agente só fornece o conteúdo validado.
  */
-export function renderSlackMessage(report: RcaReport): { text: string; blocks: SlackBlock[] } {
+export function renderSlackMessage(
+  report: RcaReport,
+  options: { traceUrl?: string | undefined } = {},
+): { text: string; blocks: SlackBlock[] } {
   const pct = Math.round(report.rootCause.confidence * 100);
   const statusLabel =
     report.status === "PRELIMINARY" ? "Hipótese preliminar" : "Investigação inconclusiva";
@@ -55,6 +58,10 @@ export function renderSlackMessage(report: RcaReport): { text: string; blocks: S
   blocks.push({ type: "divider" });
   blocks.push(section(`*Próximos passos*\n${bullets(report.nextSteps)}`));
   if (report.limitations.length > 0) blocks.push(section(`*Limitações*\n${bullets(report.limitations)}`));
+  if (options.traceUrl) {
+    // Quem for validar a hipótese vê cada passo do agente: o que consultou e o que recebeu.
+    blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `<${options.traceUrl}|Ver a investigação passo a passo>` }] });
+  }
 
   return { text: `RCA ${report.incidentId}: ${statusLabel}. ${report.rootCause.statement}`, blocks };
 }

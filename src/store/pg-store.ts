@@ -4,10 +4,12 @@ import type { RcaReport } from "../report/schema.js";
 import type {
   CaseClaim,
   CaseId,
+  Delivery,
   PastIncident,
   PostmortemHit,
   PostmortemInput,
   ReportId,
+  ReportSummary,
   RunId,
   RunOutcome,
   StartRun,
@@ -46,11 +48,11 @@ export class PgStore implements Store {
     );
   }
 
-  async startRun(caseId: CaseId, model: string): Promise<StartRun> {
+  async startRun(caseId: CaseId, model: string, traceId?: string): Promise<StartRun> {
     try {
       const { rows } = await this.pool.query<{ id: RunId }>(
-        `INSERT INTO investigation_run (case_id, status, model) VALUES ($1, 'RUNNING', $2) RETURNING id`,
-        [caseId, model],
+        `INSERT INTO investigation_run (case_id, status, model, trace_id) VALUES ($1, 'RUNNING', $2, $3) RETURNING id`,
+        [caseId, model, traceId ?? null],
       );
       return { kind: "started", runId: rows[0]!.id };
     } catch (error) {
@@ -87,8 +89,53 @@ export class PgStore implements Store {
     return rows[0]!.id;
   }
 
-  async markPublished(reportId: ReportId, slackTs: string): Promise<void> {
-    await this.pool.query(`UPDATE rca_report SET slack_ts = $2 WHERE id = $1`, [reportId, slackTs]);
+  async markDelivered(reportId: ReportId, delivery: Delivery): Promise<void> {
+    await this.pool.query(`UPDATE rca_report SET delivery = $2, slack_ts = $3 WHERE id = $1`, [
+      reportId,
+      delivery.kind,
+      delivery.kind === "slack" ? delivery.ts : null,
+    ]);
+  }
+
+  async listRecentReports(limit: number): Promise<ReportSummary[]> {
+    const { rows } = await this.pool.query<{
+      id: ReportId;
+      external_id: string;
+      product: string;
+      title: string;
+      status: string;
+      confidence: string;
+      root_cause: string;
+      delivery: ReportSummary["delivery"];
+      trace_id: string | null;
+      created_at: Date;
+      verdict: Verdict | null;
+    }>(
+      `SELECT r.id, c.external_id, c.product, c.title, r.status, r.confidence, r.root_cause, r.delivery,
+              run.trace_id, r.created_at, f.verdict
+         FROM rca_report r
+         JOIN incident_case c ON c.id = r.case_id
+         JOIN investigation_run run ON run.id = r.run_id
+         LEFT JOIN LATERAL (
+           SELECT verdict FROM rca_feedback WHERE report_id = r.id ORDER BY created_at DESC LIMIT 1
+         ) f ON true
+        ORDER BY r.created_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return rows.map((r) => ({
+      reportId: r.id,
+      externalId: r.external_id,
+      product: r.product,
+      title: r.title,
+      status: r.status,
+      confidence: Number(r.confidence),
+      rootCause: r.root_cause,
+      delivery: r.delivery,
+      traceId: r.trace_id,
+      createdAt: r.created_at.toISOString(),
+      feedback: r.verdict,
+    }));
   }
 
   async recordFeedback(args: { reportId: ReportId; verdict: Verdict; author: string; actualCause?: string | undefined }): Promise<void> {

@@ -1,6 +1,10 @@
 # Postgres para desenvolvimento local e para os testes de integração.
 #   docker compose up -d
 #   DATABASE_URL=postgres://sre:sre@localhost:5432/sre_agent npm run db:migrate
+#
+# Visualizador de traces local, sem conta em lugar nenhum (opcional):
+#   docker compose --profile tracing up -d
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318  e abra http://localhost:16686
 services:
   postgres:
     image: postgres:17
@@ -14,5 +18,11 @@ services:
       test: ["CMD", "pg_isready", "-U", "sre", "-d", "sre_agent"]
       interval: 2s
       retries: 15
+  jaeger:
+    image: jaegertracing/jaeger:2.11.0
+    profiles: ["tracing"]
+    ports:
+      - "16686:16686" # interface
+      - "4318:4318"   # OTLP/HTTP
 volumes:
   pgdata:

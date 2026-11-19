@@ -11,7 +11,8 @@ function deps(store: MemoryStore, overrides: Partial<JobDeps> = {}): JobDeps {
     store,
     connect: async () => ({ tools: [], sourcesSummary: "", close: async () => {} }),
     investigate: async () => ({ report: sampleReport, usage }),
-    publish: async () => ({ kind: "posted", ts: "1731.0001" }),
+    publish: async () => ({ kind: "slack", ts: "1731.0001" }),
+    publishMode: "slack",
     ...overrides,
   };
 }
@@ -21,7 +22,7 @@ describe("executeJob", () => {
     const store = new MemoryStore();
     const result = await executeJob(sampleIncident, deps(store));
 
-    expect(result).toMatchObject({ kind: "succeeded", published: "posted" });
+    expect(result).toMatchObject({ kind: "succeeded", delivery: "slack" });
     expect(store.runs[0]).toMatchObject({ status: "SUCCEEDED", outcome: { kind: "succeeded", ...usage } });
     expect(store.reports[0]).toMatchObject({ slackTs: "1731.0001" });
   });

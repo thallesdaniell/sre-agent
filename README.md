@@ -35,6 +35,9 @@ flowchart LR
     db[("Postgres<br/>casos, runs, relatórios,<br/>feedback, post-mortems")]
     intake -- "deduplica" --> db
     job -- "registra o run<br/>e lê o histórico" --> db
+
+    obs["Langfuse ou outro backend OTLP<br/>cada passo do agente"]
+    job -- "spans OpenTelemetry" --> obs
 ```
 
 ### Uma investigação, passo a passo
@@ -78,6 +81,7 @@ sequenceDiagram
 - **Job** (`src/job.ts`): um processo por incidente. Conecta as integrações, roda o agente, publica e termina.
 - **Agente** (`src/agent/`): o Tool Runner do SDK cuida do loop. O agente termina chamando `submit_rca_report`, e o schema em `src/report/schema.ts` impõe as regras do relatório (nunca `CONFIRMED`, confiança limitada quando a mudança só "veio antes", evidência obrigatória).
 - **Integrações** (`src/integrations/`): cada fonte de evidência é um módulo. Ver abaixo.
+- **Rastreio** (`src/telemetry.ts`): OpenTelemetry padrão. Cada investigação vira um trace com cada chamada ao modelo e cada tool. Ver [Rastreio](#rastreio).
 - **Store** (`src/store/`): todo acesso ao Postgres passa por uma interface (`Store`), com todo o SQL em `pg-store.ts`. Ver [Persistência](#persistência).
 
 ## Integrações
@@ -246,6 +250,89 @@ npm run postmortems:import -- fixtures/postmortems
 
 A busca usa o full-text search do Postgres em português, com peso maior para título, causa raiz e tags. Busca semântica (`pgvector`) fica para quando a textual não bastar.
 
+## Rastreio
+
+O banco guarda **o que** o agente concluiu. O rastreio mostra **como** ele chegou lá: cada chamada ao modelo, cada tool consultada, quanto tempo e quantos tokens cada passo gastou. Sem isso, quando o agente erra, não dá para saber se faltou uma fonte, se ele ignorou uma evidência ou se a tool devolveu lixo.
+
+### Como é um trace
+
+```mermaid
+flowchart TD
+    root["rca.investigation<br/>sessão = incidente, tags, status, entrega"]
+    loop["anthropic.messages.tool_runner<br/>o loop do agente"]
+    m1["anthropic.messages.create<br/>chamada 1: tokens, modelo"]
+    t1["anthropic.custom_tool_use list_pods"]
+    t2["anthropic.custom_tool_use rollout_history"]
+    m2["anthropic.messages.create<br/>chamada 2"]
+    t3["anthropic.custom_tool_use submit_rca_report"]
+    m3["anthropic.messages.create<br/>chamada final"]
+    root --> loop
+    loop --> m1 --> t1 --> t2 --> m2 --> t3 --> m3
+```
+
+Só o span raiz (`rca.investigation`) é nosso. Os outros vêm prontos do SDK da Anthropic, que segue as convenções `gen_ai.*` do OpenTelemetry. O `trace_id` fica gravado em `investigation_run`, então dá para ir do banco (ou do `npm run review`) direto para o raciocínio daquela investigação.
+
+### Por que OpenTelemetry e não o SDK de um fornecedor
+
+O código só fala OpenTelemetry. O destino é escolhido por variável de ambiente, sem mudar uma linha:
+
+| Destino | Configuração |
+|---|---|
+| Langfuse (cloud ou self-hosted) | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` |
+| Qualquer backend OTLP/HTTP | `OTEL_EXPORTER_OTLP_ENDPOINT` (e `OTEL_EXPORTER_OTLP_HEADERS` se pedir autenticação) |
+| Jaeger local, sem conta | `docker compose --profile tracing up -d` e `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` |
+| Console (debug) | `OTEL_TRACES_EXPORTER=console` |
+| Nada | rastreio desligado, sem custo |
+
+Por padrão os spans levam só metadados (ids, tempos, tokens, nomes das tools). Com `TRACE_CONTENT=content` vão também os prompts, as respostas e os argumentos das tools, que são o que permite entender um erro do agente. Ligue só num backend que você controla: logs de produção vão junto.
+
+### O que é o Langfuse
+
+Um backend de observabilidade **feito para aplicações com LLM**, open source, que pode rodar na sua infraestrutura (Docker Compose ou Kubernetes) ou na nuvem deles. Além de mostrar o trace, ele entende o que é uma chamada de modelo:
+
+- **Sessões**: agrupa todas as tentativas do mesmo incidente (`langfuse.session.id`).
+- **Custo e tokens** por trace, por modelo e por período.
+- **Scores e avaliações**: notas por trace, dadas por pessoas ou por um LLM juiz.
+- **Datasets**: transformar traces reais em casos de teste. É o caminho natural para o nosso conjunto de avaliação.
+
+Ele recebe OTLP em `/api/public/otel`, então funciona com o que já está aqui. Os atributos `langfuse.*` do span raiz viram nome, sessão, tags e metadados do trace; em outros backends aparecem como atributos comuns.
+
+### Comparação
+
+| Ferramenta | Tipo | Bom para | Atenção |
+|---|---|---|---|
+| **Langfuse** | Open source, self-hosted ou cloud | Traces de LLM, sessões, custo, avaliações e datasets no mesmo lugar | O self-hosted completo tem vários serviços (Postgres, ClickHouse, Redis, armazenamento de objetos) |
+| **Arize Phoenix** | Open source, roda local | Avaliação e análise de traces, baseado em OpenTelemetry | Menos foco em operação contínua do que em análise |
+| **LangSmith** | SaaS (self-hosted só no plano enterprise) | Quem já usa LangChain ou LangGraph | Mais amarrado ao ecossistema LangChain |
+| **Braintrust** | SaaS | Avaliação e experimentos com prompts | Foco em avaliação, não em operação |
+| **Helicone** | Open source, proxy | Logar chamadas sem mudar código (fica entre a app e a API) | Vê as chamadas ao modelo, não as tools nem o resto da investigação |
+| **Datadog / New Relic / Grafana** | APM geral | Ver o agente ao lado do resto da infraestrutura, se o time já usa | Recursos específicos de LLM variam; custo por volume |
+| **Jaeger / Grafana Tempo** | Open source, traces genéricos | Ver a árvore de spans sem conta nenhuma | Não entendem custo, sessões nem avaliações |
+
+Para este projeto, a escolha é **Langfuse**: open source, roda de graça na sua máquina ou cluster e já traz datasets e avaliações, que são o próximo passo. Como o código só fala OpenTelemetry, trocar de destino é mudar variável de ambiente.
+
+## Modo sombra e revisão
+
+O agente começa em **modo sombra** (`PUBLISH_MODE=shadow`, o padrão): investiga, salva o relatório e o trace, mas **não publica nada**. O time compara as conclusões com o que de fato aconteceu, sem o agente influenciar o incidente. Quando a taxa de acerto justificar, troque para `PUBLISH_MODE=slack`.
+
+```bash
+npm run review
+```
+
+```text
+9aec347d-...  INC-1042 (checkout)  PRELIMINARY 70%  entrega=shadow  feedback=—
+  Checkout retornando 502 para parte dos usuários
+  causa: Limite de memória do checkout-api reduzido de 1Gi para 512Mi na revisão 42
+  https://cloud.langfuse.com/project/<id>/traces/051c6099...
+```
+
+Registre se o agente acertou. Quando ele errou, a causa real é obrigatória: é ela que a tool `past_incidents` mostra ao agente na próxima investigação do produto.
+
+```bash
+npm run review -- feedback <reportId> correct --author ana
+npm run review -- feedback <reportId> wrong --author ana --cause "Pool de conexões esgotado"
+```
+
 ## Rodando localmente
 
 Pré-requisitos: Node 22 (ou Docker), Docker Compose, acesso a um cluster (pode ser `kind` ou `k3d`) e credencial da Anthropic (`ANTHROPIC_API_KEY` ou `ant auth login`).
@@ -300,5 +387,8 @@ O webhook precisa enviar os cabeçalhos `x-timestamp` (epoch em segundos) e `x-s
 - [ ] Integrações de mudança: Argo CD e Google Cloud Audit Logs
 - [ ] Integração de erros (Sentry ou Rollbar)
 - [x] Persistir casos, runs, relatórios e post-mortems (Postgres) e deduplicar entre réplicas do intake
+- [x] Rastreio com OpenTelemetry (Langfuse ou qualquer backend OTLP) e `trace_id` no banco
+- [x] Modo sombra e revisão com feedback pela linha de comando
 - [ ] Coletar feedback pelo Slack (reação ou botão no relatório) e gravar em `rca_feedback`
+- [ ] Runbooks como contexto (ex.: os playbooks dos monitores do Datadog)
 - [ ] Adaptadores de payload por fonte (incident.io, PagerDuty, Datadog)
