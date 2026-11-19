@@ -9,6 +9,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -34,8 +35,8 @@ func tools(t *testing.T) map[string]anthropic.BetaTool {
 		},
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "checkout-api", Namespace: "checkout"},
 			Spec: appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: labels}}},
-		replicaSet("checkout-api-41", "41", "checkout-api:41", labels, created),
-		replicaSet("checkout-api-42", "42", "checkout-api:42", labels, created),
+		replicaSet("checkout-api-41", "41", "checkout-api:41", labels, created, "1Gi"),
+		replicaSet("checkout-api-42", "42", "checkout-api:42", labels, created, "512Mi"),
 	)
 	conn, err := k8sint.Integration(client).Connect(t.Context(), integrations.Deps{Scopes: testfixtures.Scopes(), Store: memstore.New()})
 	if err != nil {
@@ -48,12 +49,16 @@ func tools(t *testing.T) map[string]anthropic.BetaTool {
 	return out
 }
 
-func replicaSet(name, rev, image string, labels map[string]string, created metav1.Time) *appsv1.ReplicaSet {
+func replicaSet(name, rev, image string, labels map[string]string, created metav1.Time, memLimit ...string) *appsv1.ReplicaSet {
+	resources := corev1.ResourceRequirements{}
+	if len(memLimit) > 0 {
+		resources.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(memLimit[0])}
+	}
 	return &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "checkout", Labels: labels, CreationTimestamp: created,
 			Annotations:     map[string]string{"deployment.kubernetes.io/revision": rev},
 			OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "checkout-api"}}},
-		Spec: appsv1.ReplicaSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "api", Image: image}}}}},
+		Spec: appsv1.ReplicaSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "api", Image: image, Resources: resources}}}}},
 	}
 }
 
@@ -85,6 +90,10 @@ func TestRolloutHistoryOrdenaRevisoesDaMaisNova(t *testing.T) {
 	}
 	if strings.Index(out, `"revision":42`) > strings.Index(out, `"revision":41`) {
 		t.Fatalf("ordem errada: %s", out)
+	}
+	// O limite de memória de cada revisão aparece: é a evidência direta numa falha por OOM.
+	if !strings.Contains(out, `"memory":"512Mi"`) || !strings.Contains(out, `"memory":"1Gi"`) {
+		t.Fatalf("limites ausentes: %s", out)
 	}
 }
 

@@ -149,7 +149,7 @@ func Integration(client kubernetes.Interface) integrations.Integration {
 				Deployment string `json:"deployment" jsonschema:"required"`
 			}
 			rollout := integrations.NewTool("rollout_history",
-				"Revisões de um Deployment com imagem e horário. Consulte sempre que houver suspeita de mudança: é a evidência direta de que algo mudou. "+productDesc,
+				"Revisões de um Deployment com horário, imagem e requests/limits de cada container. Consulte sempre que houver suspeita de mudança: é a evidência direta de que algo mudou. "+productDesc,
 				func(ctx context.Context, in rolloutIn) (string, error) {
 					namespace, err := ns(in.Product, in.Namespace)
 					if err != nil {
@@ -268,12 +268,32 @@ func (e evidence) events(ctx context.Context, namespace string, sinceMinutes int
 }
 
 type revision struct {
-	Revision    int       `json:"revision"`
-	ReplicaSet  string    `json:"replicaSet"`
-	CreatedAt   time.Time `json:"createdAt"`
-	Replicas    int32     `json:"replicas"`
-	Images      []string  `json:"images"`
-	ChangeCause string    `json:"changeCause,omitempty"`
+	Revision    int             `json:"revision"`
+	ReplicaSet  string          `json:"replicaSet"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	Replicas    int32           `json:"replicas"`
+	Containers  []containerSpec `json:"containers"`
+	ChangeCause string          `json:"changeCause,omitempty"`
+}
+
+// containerSpec traz imagem e recursos: numa falha por memória ou CPU, a mudança decisiva
+// costuma estar no limite, não na imagem.
+type containerSpec struct {
+	Name     string            `json:"name"`
+	Image    string            `json:"image"`
+	Requests map[string]string `json:"requests,omitempty"`
+	Limits   map[string]string `json:"limits,omitempty"`
+}
+
+func resourceMap(list corev1.ResourceList) map[string]string {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(list))
+	for name, qty := range list {
+		out[string(name)] = qty.String()
+	}
+	return out
 }
 
 // rolloutHistory: cada ReplicaSet do Deployment é uma revisão, com imagem e horário. É a evidência
@@ -306,7 +326,9 @@ func (e evidence) rolloutHistory(ctx context.Context, namespace, deployment stri
 		r := revision{Revision: rev, ReplicaSet: rs.Name, CreatedAt: rs.CreationTimestamp.Time, Replicas: rs.Status.Replicas,
 			ChangeCause: rs.Annotations["kubernetes.io/change-cause"]}
 		for _, c := range rs.Spec.Template.Spec.Containers {
-			r.Images = append(r.Images, c.Image)
+			r.Containers = append(r.Containers, containerSpec{
+				Name: c.Name, Image: c.Image, Requests: resourceMap(c.Resources.Requests), Limits: resourceMap(c.Resources.Limits),
+			})
 		}
 		out = append(out, r)
 	}
