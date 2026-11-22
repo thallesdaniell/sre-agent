@@ -437,3 +437,7 @@ O webhook precisa enviar os cabeçalhos `x-timestamp` (epoch em segundos) e `x-s
 - [ ] Coletar feedback pelo Slack (reação ou botão no relatório) e gravar em `rca_feedback`
 - [ ] Runbooks como contexto (ex.: os playbooks dos monitores do Datadog)
 - [ ] Adaptadores de payload por fonte (incident.io, PagerDuty, Datadog)
+
+## Licença
+
+[MIT](LICENSE)
